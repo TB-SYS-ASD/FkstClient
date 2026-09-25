@@ -344,30 +344,42 @@ def update_collection(client: FkstClient, object_id, on: bool = True,
 
 
 # --------------------------------------------------------------- 发布 / 删除笔记
-def build_note_content(text: str) -> str:
-    """拼官方客户端的正文包体（服务端 content 字段存的其实是这么一坨 JSON）。"""
-    from .constants import NOTE_CONTENT_TPL
-    import json as _json
-    body = dict(NOTE_CONTENT_TPL)
-    body["text"] = text or ""
-    return _json.dumps(body, ensure_ascii=False)
+def build_note_content(text: str, audio_urls=None) -> str:
+    """发布笔记的 `content` 字段 —— **就是纯文本正文本身，不要包成 JSON**。
+
+    2026-09-25 复测修正了旧结论：服务端把这个字段当**正文文本**存，不做协议解析。
+    官方笔记在列表接口里返回的 `content` 就是纯文本（如 `'好久不见'`），
+    `GetNote` 解密出来是 `<p>好久不见</p>`。
+
+    早先按 `NOTE_CONTENT_TPL` 那坨 JSON 提交，整串 JSON 会被原样当成正文存下来，
+    列表和详情页都会显示出这坨 JSON。
+
+    音频没有对应字段，改用每段一行 `[音频] <url>` 追加在正文末尾。
+    """
+    from .constants import AUDIO_MARK
+    body = (text or "").strip()
+    marks = "\n".join(f"{AUDIO_MARK} {u}" for u in (audio_urls or []) if u)
+    if not marks:
+        return body
+    return f"{body}\n{marks}" if body else marks
 
 
 def publish_note(client: FkstClient, title: str, text: str = "",
-                 image_urls=None, type_: str = "10") -> dict:
+                 image_urls=None, audio_urls=None, type_: str = "10") -> dict:
     """发布一篇社区笔记。
 
     2026-09-25 实测走 `UploadNote2`，**comment 签名变体**（通用签名回「非法请求2」）：
 
         urls    : 已上传图片地址列表（JSON 数组字符串，第一张成为封面）
         title   : 标题（必填，为空服务端回「缺少参数 title」）
-        content : build_note_content(text)
+        content : build_note_content(text, audio_urls) —— 纯文本正文
         type    : 分区 type，取值见 constants.CATEGORIES
 
     成功 → {"res": 0, "id": "5145261"}。
 
     ⚠️ 频率限制：两贴间隔至少 5 分钟，否则 res=2「发布频繁，两贴发布间隔至少5分钟」。
-    图片请先 `upload_image(..., dir_name="stupnote")` 拿到 url 再传进来。
+    图片请先 `upload_image(..., dir_name="stupnote")`、音频先 `upload_audio(...)`
+    拿到 url 再传进来。
     """
     import json as _json
     title = (title or "").strip()
@@ -377,7 +389,10 @@ def publish_note(client: FkstClient, title: str, text: str = "",
     urls = _json.dumps([str(u) for u in (image_urls or []) if u], ensure_ascii=False)
     return client.request(
         "PUBLISH_NOTE", expect_res=False,
-        title=title, content=build_note_content(text), urls=urls, type=str(type_),
+        title=title,
+        content=build_note_content(text, audio_urls),
+        urls=urls,
+        type=str(type_),
     )
 
 
@@ -402,3 +417,28 @@ def upload_image(client, path, dir_name="stupnote", filename=None, mime="image/j
     data = p.read_bytes()
     name = filename or p.name
     return client.upload_image(data, filename=name, mime=mime, dir_name=dir_name)
+
+
+# --------------------------------------------------------------- 音频上传
+def upload_audio(client, path, filename=None, mime="audio/mpeg"):
+    """上传本地音频（发布笔记时用），返回服务端响应（含 url）。
+
+    实测（2026-09-25）`OSSUploadAudio2.php`：
+      - 通用签名 + 文件字段 `file`，**不需要 dir_name**（传了会被忽略）
+      - **只收 `.mp3`**：wav / m4a 一律 `{"res":1,"error":"upload audio failed"}`
+      - 服务端按**扩展名**判断，不校验内容
+      - 成功 → `{"res":0,"url":"http://imgcdn.yaerxing.com/audio/2026/09/25/<随机>.mp3"}`
+
+    用法：
+        r = upload_audio(client, "voice.mp3")
+        if r.get("res") == 0:
+            print(r["url"])
+
+    笔记正文并没有音频字段，所以拿到 url 后要让 `publish_note` 把
+    `[音频] <url>` 拼进正文（见 `build_note_content`）。
+    """
+    from pathlib import Path as _P
+    p = _P(path)
+    data = p.read_bytes()
+    name = filename or p.name
+    return client.upload_audio(data, filename=name, mime=mime)

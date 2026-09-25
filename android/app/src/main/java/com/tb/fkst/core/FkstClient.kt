@@ -167,6 +167,22 @@ class FkstClient(
         dirName: String = Constants.FILE_DIR_NOTE,
     ): JSONObject = upload("UPLOAD_FILE", bytes, fileName, mimeType, dirName)
 
+    /**
+     * 上传一段音频（multipart/form-data）。
+     *
+     * 实测（2026-09-25）`OSSUploadAudio2.php`：
+     * - 通用签名 + 文件字段 `file`，**不需要 `dir_name`**
+     * - **只收 `.mp3`**：wav / m4a 一律回 `{"res":1,"error":"upload audio failed"}`
+     * - 成功：`{"res":0,"url":"http://imgcdn.yaerxing.com/audio/<年月日>/<随机>.mp3"}`
+     *
+     * 同样**不抛 res!=0 的异常**，交给上层判断错误文案。
+     */
+    suspend fun uploadAudio(
+        bytes: ByteArray,
+        fileName: String = "voice.mp3",
+        mimeType: String = "audio/mpeg",
+    ): JSONObject = upload("UPLOAD_AUDIO", bytes, fileName, mimeType, "")
+
     private suspend fun upload(
         endpoint: String,
         bytes: ByteArray,
@@ -177,7 +193,9 @@ class FkstClient(
         val ep = Endpoints.MAP[endpoint]
             ?: throw IllegalArgumentException("未定义的端点: $endpoint")
 
-        val built = buildParams(endpoint, ep, mapOf("dir_name" to dirName))
+        // 音频上传没有 dir_name 这个概念，留空时不带这个字段
+        val extra = if (dirName.isBlank()) emptyMap() else mapOf("dir_name" to dirName)
+        val built = buildParams(endpoint, ep, extra)
         val signed = LinkedHashMap(built)
         signed["api_sig"] = Signer.sign(ep.sign, built)
 

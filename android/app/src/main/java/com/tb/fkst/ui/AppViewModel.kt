@@ -19,6 +19,7 @@ import com.tb.fkst.data.Letter
 import com.tb.fkst.data.Note
 import com.tb.fkst.data.Notice
 import com.tb.fkst.data.Paged
+import com.tb.fkst.data.PendingAudio
 import com.tb.fkst.data.PendingImage
 import com.tb.fkst.data.Repository
 import com.tb.fkst.data.SearchItem
@@ -901,14 +902,16 @@ class AppViewModel(val repo: Repository) : ViewModel() {
      * 发布一篇笔记。
      *
      * 先把本地图片逐张传到 `stupnote` 目录（笔记配图目录，不需要会员），
-     * 再把地址列表 + 标题 + 正文发给 `UploadNote2`。
+     * 音频传给 `OSSUploadAudio2.php`，再把地址 + 标题 + 正文发给 `UploadNote2`。
      *
      * @param images 已经读成字节的本地图片，顺序即展示顺序（第一张做封面）
+     * @param audios 已经读成字节的本地音频（只支持 mp3），会以 `[音频] <url>` 追加到正文末尾
      */
     fun publishNote(
         title: String,
         text: String,
         images: List<PendingImage> = emptyList(),
+        audios: List<PendingAudio> = emptyList(),
         onDone: (Boolean) -> Unit = {},
     ) {
         if (publishing) return
@@ -942,11 +945,23 @@ class AppViewModel(val repo: Repository) : ViewModel() {
                     }
                 }
 
+                val audioUrls = mutableListOf<String>()
+                for (a in audios) {
+                    try {
+                        audioUrls += Api.uploadAudio(client, a.bytes, a.fileName)
+                    } catch (e: Throwable) {
+                        toast = "音频「${a.fileName}」上传失败：" +
+                            (e.message ?: "未知原因") + "（服务端只接受 mp3）"
+                        return@launch
+                    }
+                }
+
                 val r = Api.publishNote(
                     client = client,
                     title = t,
                     text = text.trim(),
                     imageUrls = urls,
+                    audioUrls = audioUrls,
                     type = publishCategory.type,
                 )
                 val res = r.intOr("res", -1)

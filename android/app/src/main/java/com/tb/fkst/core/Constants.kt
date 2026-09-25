@@ -122,6 +122,32 @@ object Constants {
     /** 笔记附件目录（唯一实测可传文件的目录） */
     const val FILE_DIR_NOTE = "stupnotefile"
 
+    // ---------------------------------------------------------------- 音频上传
+    //
+    // 2026-09-25 实测 OSSUploadAudio2.php：
+    //   POST multipart，通用签名，文件字段名固定为 file，**不需要 dir_name**（传了会被忽略）
+    //   **只收 .mp3**：传 wav / m4a / 改了扩展名的 wav 一律回 {"res":1,"error":"upload audio failed"}
+    //   成功 → {"res":0,"url":"http://imgcdn.yaerxing.com/audio/2026/09/25/<随机>.mp3"}
+    //
+    // 笔记正文本身没有音频字段（扫过 363 篇社区笔记，零音频痕迹），
+    // 所以音频是**本客户端自己的扩展**：把地址以 `[音频] <url>` 的形式写进正文，
+    // 由 NoteDetailScreen 渲染成播放器；官方客户端只会显示成一行普通文字。
+
+    /** 正文里引用音频的标记前缀 */
+    const val AUDIO_MARK = "[音频]"
+
+    /** 单段音频上限 */
+    const val AUDIO_MAX_BYTES = 20 * 1024 * 1024
+
+    /** 一篇笔记最多挂几段音频 */
+    const val AUDIO_MAX_COUNT = 3
+
+    /** 从正文里抠出音频地址：`[音频] http://…mp3` */
+    val AUDIO_LINE_RE = Regex(
+        """^\[音频]\s*(\S+?\.mp3)(\?\S*)?$""",
+        RegexOption.IGNORE_CASE,
+    )
+
     /** 私信发文件统一用这个目录（stupletter 不接受文件） */
     const val FILE_DIR_LETTER = "stupnotefile"
 
@@ -158,9 +184,6 @@ object Constants {
     // `urls` 传图片地址的 JSON 数组，服务端会把第一张当封面存进 `logo` 字段。
     // 删除自己发的笔记：DeleteShuatiNote + nid（通用签名），成功 → {"res":0}
     const val NOTE_PUBLISH_MIN_INTERVAL_SEC = 300
-
-    /** 发布间隔限制（秒），用于前端提前拦一下 */
-    const val NOTE_CONTENT_VERSION = 1
 
     // ---------------------------------------------------------------- 缓存
     //
@@ -388,6 +411,12 @@ object Endpoints {
             required = listOf("dir_name"),
             defaults = mapOf("dir_name" to Constants.FILE_DIR_NOTE),
         ),
+
+        // ---------------- 音频上传（OSS，multipart） ----------------
+        // 通用签名 + 文件字段 file，**不需要 dir_name**。
+        // 只认 .mp3，其它格式一律 "upload audio failed"。
+        // 成功 → {"res":0,"url":"http://imgcdn.yaerxing.com/audio/2026/09/25/<随机>.mp3"}
+        "UPLOAD_AUDIO" to Endpoint(path = "OSSUploadAudio2.php"),
 
         // ---------------- 发布笔记 ----------------
         // 2026-09-25 实测：**comment 签名变体**（不是通用签名！用通用签名只会回「非法请求2」）。

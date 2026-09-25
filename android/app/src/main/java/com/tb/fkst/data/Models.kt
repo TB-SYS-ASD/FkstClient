@@ -1,5 +1,6 @@
 package com.tb.fkst.data
 
+import com.tb.fkst.core.Crypto
 import com.tb.fkst.core.ImageUrls
 import com.tb.fkst.core.boolOr
 import com.tb.fkst.core.intOr
@@ -55,19 +56,56 @@ data class Note(
 
     /**
      * 可读正文。
-     * `content` 字段其实是官方客户端的 JSON 包（version / text / sw_content …），
-     * 直接展示会看到一大串 JSON，这里抽出其中的纯文本。
+     *
+     * `content` 在服务端存储时会被包成 `{"version":1,"text":…,"si_urls":…}` 这种结构，
+     * `GetNote` 读回来则是 `<p>正文</p>`；而 1.5.0 之前提交的正文本身就是 JSON，
+     * 于是读回来成了双层嵌套。统一交给 [readable] 归一成纯文本，
+     * 避免把 JSON 或 HTML 标签显示给用户。
      */
-    val plainText: String get() = decodeContent(content)
+    val plainText: String get() = readable(content)
 
     companion object {
 
-        /** 把 content 的 JSON 包解成可读文本；不是 JSON 就原样返回 */
+        /**
+         * 正文归一化：先解包体 JSON，再剥 HTML 标签。
+         *
+         * 之所以要**反复解几层**，是因为服务端自己也会包一层：
+         * 提交上去的正文会被服务端存成
+         * `{"version":1,"text":"<提交的正文>",…,"sw":[[],[]]}`，
+         * `GetNote` 则把它还原成 `<p><提交的正文></p>`。
+         *
+         * 而 1.5.0 之前的版本提交的正文**本身就是一坨 JSON**，
+         * 于是服务端把它当成「正文文本」包了起来，读回来就成了双层嵌套：
+         * `<p>{"version":1,"text":"qwqwqw",…}</p>` —— 这正是详情页显示出
+         * 原始 JSON 的原因。多解几层即可同时兼容新老数据。
+         */
+        fun readable(raw: String?): String {
+            if (raw.isNullOrBlank()) return ""
+            var cur: String = raw
+            var depth = 0
+            while (depth < 3) {
+                val next = decodeContent(cur)
+                if (next == cur) break
+                cur = next
+                depth++
+            }
+            return Crypto.stripTags(cur)
+        }
+
+        /**
+         * 把 content 的包体 JSON 解成可读文本；不是 JSON 包就原样返回。
+         *
+         * 不要求整串都是 JSON —— 从第一个 `{` 到最后一个 `}` 截出来试解析，
+         * 这样 JSON 被 HTML 模板包住时也能抽出来。
+         */
         fun decodeContent(raw: String): String {
             val t = raw.trim()
-            if (t.isEmpty() || !t.startsWith("{")) return raw
+            if (t.isEmpty()) return raw
+            val start = t.indexOf('{')
+            val end = t.lastIndexOf('}')
+            if (start < 0 || end <= start) return raw
             return try {
-                val o = JSONObject(t)
+                val o = JSONObject(t.substring(start, end + 1))
                 val sb = StringBuilder()
                 val text = o.optString("text")
                 if (text.isNotBlank()) sb.append(text)
@@ -752,6 +790,15 @@ class PendingImage(
     val bytes: ByteArray,
     val fileName: String,
     val mimeType: String = "image/jpeg",
+) {
+    val size: Int get() = bytes.size
+}
+
+/** 待上传的本地音频（发布笔记用）：服务端只认 `.mp3` */
+class PendingAudio(
+    val bytes: ByteArray,
+    val fileName: String,
+    val mimeType: String = "audio/mpeg",
 ) {
     val size: Int get() = bytes.size
 }

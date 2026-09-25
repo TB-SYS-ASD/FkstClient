@@ -64,12 +64,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
+import com.tb.fkst.core.Constants
 import com.tb.fkst.data.Api
 import com.tb.fkst.data.Comment
 import com.tb.fkst.data.NoteDetail
 import com.tb.fkst.data.Reply
 import com.tb.fkst.ui.AppViewModel
 import com.tb.fkst.ui.Routes
+import com.tb.fkst.ui.components.AudioPlayerBar
 import com.tb.fkst.ui.components.ErrorBox
 import com.tb.fkst.ui.components.FkstAvatar
 import com.tb.fkst.ui.components.LoadingBox
@@ -388,11 +390,36 @@ fun NoteDetailScreen(vm: AppViewModel, nav: NavHostController) {
                         val body = detail?.plain?.takeIf { it.isNotBlank() }
                             ?: note.plainText
                         if (body.isNotBlank()) {
-                            Text(
-                                text = body,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                            )
+                            // 正文里的 `[音频] <url>` 是本客户端的扩展（服务端没有音频字段），
+                            // 拆出来单独渲染成播放器，其余文本按原样展示。
+                            val lines = body.lines()
+                            val audios = lines.mapNotNull {
+                                Constants.AUDIO_LINE_RE.find(it.trim())?.groupValues?.get(1)
+                            }
+                            val textOnly = lines
+                                .filter { Constants.AUDIO_LINE_RE.find(it.trim()) == null }
+                                .joinToString("\n")
+                                .trim()
+
+                            if (textOnly.isNotBlank()) {
+                                Text(
+                                    text = textOnly,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                            }
+                            audios.forEachIndexed { i, u ->
+                                if (i == 0 && textOnly.isNotBlank()) {
+                                    Spacer(Modifier.height(12.dp))
+                                } else if (i > 0) {
+                                    Spacer(Modifier.height(8.dp))
+                                }
+                                AudioPlayerBar(
+                                    url = u,
+                                    title = if (audios.size > 1) "音频 ${i + 1}" else "音频",
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                            }
                         }
                     }
                 }

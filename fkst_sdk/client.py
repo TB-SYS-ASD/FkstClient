@@ -258,7 +258,48 @@ class FkstClient:
                 raw = gzip.decompress(raw)
         return json.loads(raw.decode("utf-8", "replace").strip())
 
+    def upload_audio(
+        self,
+        data: bytes,
+        filename: str = "voice.mp3",
+        mime: str = "audio/mpeg",
+    ) -> dict:
+        """上传一段音频（multipart/form-data）。
+
+        实测要点（2026-09-25，`OSSUploadAudio2.php`）：
+          - 通用签名 + 文件字段名 `file`，**不需要 `dir_name`**（传了会被忽略）
+          - **只收 `.mp3`**，而且服务端按**扩展名**判断（内容是 wav、名字写成 .mp3 照样收）
+          - 成功 → {"res":0,"url":"http://imgcdn.yaerxing.com/audio/2026/09/25/<随机>.mp3"}
+          - 其它扩展名 → {"res":1,"error":"upload audio failed"}
+
+        注意：笔记正文**没有音频字段**（扫过 363 篇社区笔记，零音频痕迹），
+        所以音频只能在正文里以 `[音频] <url>` 的形式表达。
+        """
+        ep = ENDPOINTS["UPLOAD_AUDIO"]
+        params = self.build_params("UPLOAD_AUDIO")
+        params["api_sig"] = SIGNERS[ep.get("sign", "default")](params)
+
+        boundary = "----FkstBoundary" + uuid.uuid4().hex
+        body = _multipart_body(params, "file", filename, mime, data, boundary)
+        url = ep.get("base_url", self.base_url) + ep["path"]
+
+        self.limiter.wait()
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "User-Agent": "okhttp/4.9.0",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            raw = resp.read()
+            if resp.headers.get("Content-Encoding") == "gzip":
+                import gzip
+                raw = gzip.decompress(raw)
+        return json.loads(raw.decode("utf-8", "replace").strip())
     # ------------------------------------------------------------------ 会话
+
     def update_dynamic(self, **kwargs):
         for k, v in kwargs.items():
             if v:

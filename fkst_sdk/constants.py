@@ -274,6 +274,16 @@ ENDPOINTS = {
         "default_params": {"dir_name": "stupnotefile"},
     },
 
+    # --- 音频上传（multipart）---
+    # 2026-09-25 实测 OSSUploadAudio2.php：
+    #   通用签名 + 文件字段 file，**不需要 dir_name**（传了会被忽略）
+    #   **只认 .mp3**（按扩展名判断，内容不校验）：
+    #     成功 → {"res":0,"url":"http://imgcdn.yaerxing.com/audio/2026/09/25/<随机>.mp3"}
+    #     其它 → {"res":1,"error":"upload audio failed"}
+    "UPLOAD_AUDIO": {
+        "path": "OSSUploadAudio2.php",
+    },
+
     # --- 发布 / 删除笔记 ---
     # 2026-09-25 实测：UploadNote2 用的是 **comment 签名变体**（通用签名只会回「非法请求2」）。
     #   urls    : 已上传图片地址的 JSON 数组字符串，第一张成为封面（落进 logo 字段）
@@ -296,7 +306,9 @@ ENDPOINTS = {
     },
 }
 
-# 发布笔记时 content 字段的包体结构（列表页也是从这里抽纯文本的）
+# ⚠️ 已废弃（2026-09-25 复测）：这只是当初对「官方草稿格式」的猜测，
+#   服务端**并不按这个结构解析** —— `content` 就是纯文本正文。
+#   按它提交会把整串 JSON 当正文存下来。保留在文档里供后续研究参考。
 NOTE_CONTENT_TPL = {
     "version": 1,
     "text": "",
@@ -311,6 +323,13 @@ NOTE_CONTENT_TPL = {
 
 # 平台限制：两篇笔记之间至少间隔 5 分钟
 NOTE_PUBLISH_MIN_INTERVAL_SEC = 300
+
+# 正文里引用音频的标记前缀。
+#
+# 笔记正文没有音频字段（扫过 363 篇社区笔记，零音频痕迹），所以音频地址只能写进正文。
+# 约定每段音频占一行：`[音频] http://imgcdn.yaerxing.com/audio/2026/09/25/xxx.mp3`
+# 客户端读到这一行就渲染成播放器；官方端只会显示成一行普通文字。
+AUDIO_MARK = "[音频]"
 
 # 「赞过 / 收藏」这两个列表接口**不返回作者昵称与头像**，只有 home_id，
 # 需要另外用 GetSTUserData 按 home_id 补资料。

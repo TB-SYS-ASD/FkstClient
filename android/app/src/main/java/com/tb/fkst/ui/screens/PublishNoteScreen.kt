@@ -1,6 +1,8 @@
 package com.tb.fkst.ui.screens
 
+import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,11 +54,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
 import com.tb.fkst.core.Constants
 import com.tb.fkst.core.ImageUrls
+import com.tb.fkst.data.PendingAudio
 import com.tb.fkst.data.PendingImage
 import com.tb.fkst.ui.AppViewModel
 import kotlinx.coroutines.Dispatchers
@@ -91,6 +96,44 @@ fun PublishNoteScreen(vm: AppViewModel, nav: NavHostController) {
     data class Shot(val uri: Uri, val image: PendingImage)
 
     val shots = remember { mutableStateListOf<Shot>() }
+
+    // 音频：uri + 已经读好的字节（服务端只认 mp3）
+    data class Clip(val uri: Uri, val audio: PendingAudio)
+
+    val clips = remember { mutableStateListOf<Clip>() }
+
+    val audioPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            if (clips.size >= Constants.AUDIO_MAX_COUNT) {
+                vm.toast = "最多只能放 ${Constants.AUDIO_MAX_COUNT} 段音频"
+                return@launch
+            }
+            val loaded = withContext(Dispatchers.IO) {
+                runCatching {
+                    val mime = context.contentResolver.getType(uri) ?: "audio/mpeg"
+                    val name = displayName(context, uri)
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: return@runCatching null
+                    Triple(name, bytes, mime)
+                }.getOrNull()
+            }
+            if (loaded == null) {
+                vm.toast = "读取音频失败"
+                return@launch
+            }
+            val (name, bytes, mime) = loaded
+            when {
+                !name.lowercase().endsWith(".mp3") ->
+                    vm.toast = "服务端只接受 mp3，请先转成 mp3 再选"
+                bytes.size > Constants.AUDIO_MAX_BYTES ->
+                    vm.toast = "音频超过 ${Constants.AUDIO_MAX_BYTES / 1024 / 1024}MB，太大了"
+                else -> clips.add(Clip(uri, PendingAudio(bytes, name, mime)))
+            }
+        }
+    }
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents()
@@ -133,7 +176,9 @@ fun PublishNoteScreen(vm: AppViewModel, nav: NavHostController) {
             vm.toast = "标题不能为空"
             return
         }
-        vm.publishNote(title, text, shots.map { it.image }) { ok -> if (ok) nav.popBackStack() }
+        vm.publishNote(title, text, shots.map { it.image }, clips.map { it.audio }) { ok ->
+            if (ok) nav.popBackStack()
+        }
     }
 
     Scaffold(
@@ -292,6 +337,84 @@ fun PublishNoteScreen(vm: AppViewModel, nav: NavHostController) {
 
             Spacer(Modifier.height(12.dp))
 
+            // ---------------- 音频 ----------------
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "音频 ${clips.size}/${Constants.AUDIO_MAX_COUNT}",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(
+                            onClick = { audioPicker.launch("audio/mpeg") },
+                            enabled = !vm.publishing && clips.size < Constants.AUDIO_MAX_COUNT,
+                        ) {
+                            Icon(
+                                Icons.Filled.GraphicEq,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("选音频")
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = if (clips.isEmpty()) {
+                            "服务端只接受 mp3。音频会以「${Constants.AUDIO_MARK} 地址」的形式附在正文末尾，" +
+                                "在本客户端里渲染成播放器，官方客户端会显示成一行文字。"
+                        } else {
+                            "共 ${ImageUrls.readableSize(clips.sumOf { it.audio.size.toLong() })}"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    clips.forEach { clip ->
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(
+                                Icons.Filled.GraphicEq,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = clip.audio.fileName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            IconButton(
+                                onClick = { clips.remove(clip) },
+                                enabled = !vm.publishing,
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "移除",
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
             // ---------------- 分区 ----------------
             Card(
                 shape = RoundedCornerShape(20.dp),
@@ -381,4 +504,23 @@ private fun nameFor(mime: String): String = when {
     mime.contains("webp", true) -> "note_${System.currentTimeMillis()}.webp"
     mime.contains("heic", true) -> "note_${System.currentTimeMillis()}.heic"
     else -> "note_${System.currentTimeMillis()}.jpg"
+}
+
+/**
+ * 取 content:// 的真实文件名。
+ *
+ * 音频上传**服务端只看扩展名**（实测：内容是 wav、文件名写成 .mp3 照样收），
+ * 所以这里必须拿到原始文件名才能判断用户选的到底是不是 mp3。
+ */
+private fun displayName(context: Context, uri: Uri): String {
+    runCatching {
+        context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0 && c.moveToFirst()) {
+                val name = c.getString(idx)
+                if (!name.isNullOrBlank()) return name
+            }
+        }
+    }
+    return uri.lastPathSegment?.substringAfterLast('/') ?: "voice.mp3"
 }

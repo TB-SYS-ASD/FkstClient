@@ -95,7 +95,13 @@ object Api {
         val r = client.request("GET_NOTE", p)
         val cipher = r.str("content")
         val content = Crypto.decryptContent(cipher, secretKey)
-        return NoteDetail(noteId = noteId, content = content, plain = Crypto.stripTags(content))
+        // 自己发的笔记，服务端存的 `content` 就是 buildNoteContent() 那坨 JSON；
+        // 官方笔记则是带模板的 HTML。统一走 Note.readable()，先解包体再剥标签。
+        return NoteDetail(
+            noteId = noteId,
+            content = content,
+            plain = Note.readable(content.ifBlank { cipher }),
+        )
     }
 
     // ------------------------------------------------------------ 评论
@@ -434,6 +440,7 @@ object Api {
         title: String,
         text: String,
         imageUrls: List<String> = emptyList(),
+        audioUrls: List<String> = emptyList(),
         type: String = Constants.CATEGORIES.first().type,
     ): JSONObject {
         val t = title.trim()
@@ -442,12 +449,28 @@ object Api {
             "PUBLISH_NOTE",
             mapOf(
                 "title" to t,
-                "content" to buildNoteContent(text),
+                "content" to buildNoteContent(text, audioUrls),
                 "urls" to org.json.JSONArray(imageUrls.filter { it.isNotBlank() }).toString(),
                 "type" to type,
             ),
             expectRes = false,
         )
+    }
+
+    /**
+     * 上传一段音频，成功返回可访问的 url；失败抛异常并带上服务端文案。
+     *
+     * 接口是 `OSSUploadAudio2.php`，**只认 `.mp3`**。
+     */
+    suspend fun uploadAudio(client: FkstClient, bytes: ByteArray, fileName: String): String {
+        val r = client.uploadAudio(bytes, fileName)
+        val url = r.str("url")
+        if (r.optInt("res", -1) != 0 || url.isBlank()) {
+            throw IllegalStateException(
+                r.str("error").ifBlank { "音频上传失败（服务端只接受 mp3）" }
+            )
+        }
+        return url
     }
 
     /** 删除自己发的笔记（`DeleteShuatiNote` + `nid`，通用签名） */
@@ -457,27 +480,29 @@ object Api {
     }
 
     /**
-     * 拼官方客户端的正文包体。
+     * 拼发布笔记的 `content` 字段 —— **正文原样提交，不要包成 JSON**。
      *
-     * 服务端 `content` 字段存的其实是这么一坨 JSON：
-     * ```json
-     * {"version":1,"text":"正文","update_count":0,"up_count":0,
-     *  "sw_title":[],"sw_content":[],"sw":[[],[]],"si_urls":[],"si_label":[]}
-     * ```
-     * 列表页读的时候我们也是从 `text` / `sw_content` 里把纯文本抽出来的
-     * （见 `Note.decodeContent`），所以这里按同一个结构拼回去就行。
+     * 2026-09-25 复测修正了 14.3 节的旧结论：服务端把这个字段当**正文文本**存，
+     * 不做任何协议解析。官方笔记在列表接口里返回的 `content` 就是纯文本
+     * （如 `'好久不见'`），`GetNote` 解密出来是 `<p>好久不见</p>`。
+     *
+     * 之前按 `{"version":1,"text":…}` 提交，结果整串 JSON 被当成正文存了下来，
+     * 列表和详情页都会原样显示这坨 JSON。
+     * 老数据仍由 `Note.decodeContent` 兼容解析，不会显示成 JSON。
+     *
+     * 音频没有对应字段，改用正文里的一行标记 `[音频] <url>` 表达，
+     * 追加在正文末尾；渲染见 `NoteDetailScreen`。
      */
-    fun buildNoteContent(text: String): String = org.json.JSONObject().apply {
-        put("version", Constants.NOTE_CONTENT_VERSION)
-        put("text", text)
-        put("update_count", 0)
-        put("up_count", 0)
-        put("sw_title", org.json.JSONArray())
-        put("sw_content", org.json.JSONArray())
-        put("sw", org.json.JSONArray())
-        put("si_urls", org.json.JSONArray())
-        put("si_label", org.json.JSONArray())
-    }.toString()
+    fun buildNoteContent(text: String, audioUrls: List<String> = emptyList()): String {
+        val body = text.trim()
+        val marks = audioUrls.filter { it.isNotBlank() }
+            .joinToString("\n") { "${Constants.AUDIO_MARK} $it" }
+        return when {
+            marks.isEmpty() -> body
+            body.isEmpty() -> marks
+            else -> "$body\n$marks"
+        }
+    }
 
     // ------------------------------------------------------------ 签到
 

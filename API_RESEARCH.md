@@ -3,9 +3,6 @@
 > 研究时间：2026-09-25
 > 研究材料：本项目源码 + 官方 APK 2.0.8（本机 Downloads 内的 `com.yaerxing.fkst_2.0.8.zip`）+ 官方 APK 2.3.3（从官方版本接口下载）+ 线上接口实测
 > 结论一句话：协议已经完全跑通，匿名即可读取社区内容；登录后可以发评论，具备做机器人的全部基础条件。
->
-> **隐私说明**：为便于公开，本文档中出现的账号 `mid` / `home_id` / 昵称 / 本机绝对路径
-> 均已替换为演示值（`10000001` / `10000002` / `示例用户`），非真实账号信息。
 
 ---
 
@@ -775,11 +772,26 @@ $ python tools/probe_endpoint.py UploadNote2
 | --- | --- |
 | `urls` | 已上传图片地址的 **JSON 数组字符串**，如 `["http://imgcdn.yaerxing.com/upimage/stupnote/…jpg"]`；第一张作为封面 |
 | `title` | 标题，必填，空则回「缺少参数 title」 |
-| `content` | 官方那套包体 JSON：`{"version":1,"text":"正文","update_count":0,"up_count":0,"sw_title":[],"sw_content":[],"sw":[[],[]],"si_urls":[],"si_label":[]}` |
+| `content` | **纯文本正文，原样提交即可**（见下方修订） |
 | `type` | 分区 type，取值同 `Constants.CATEGORIES`（日常 10 / 好物 7 / 试卷 12 …） |
 
-`content` 之所以是这个形状，是因为**列表接口把正文塞在这个字段里，我们的
-`Note.decodeContent()` 也是从 `text` / `sw_content` 里抽纯文本的** —— 发布时按同构拼回去就行。
+> **⚠️ 2026-09-25 复测修订，推翻了本节原来的结论**
+>
+> 原来以为 `content` 要填 `{"version":1,"text":…,"si_urls":[]}` 那坨 JSON。**是错的。**
+> 服务端把这个字段当**正文文本**存，不做任何协议解析：
+>
+> - 扫了 11 个分区共 **363 篇**社区笔记，`content` 是纯文本 271 篇、空 89 篇、
+>   带 `<p>` 3 篇，**JSON 包 0 篇**；
+> - `GetNote` 解密出来是 `<p>好久不见</p>`，不是 JSON；
+> - 提交纯文本后，服务端会**自己**包一层
+>   `{"version":1,"text":"<你提交的正文>","update_count":0,"up_count":0,` +
+>   `"sw_title":[],"sw_content":[],"sw":[[],[]],"si_urls":[],"si_label":[]}`
+>   再存进库（注意 `sw` 是 `[[],[]]`，两层数组）。
+>
+> 所以按 JSON 提交的后果是：那串 JSON 被当成「正文」存了下来，
+> 再被服务端包一层，读回来就成了**双层嵌套**，列表和详情页都会原样显示这坨 JSON
+> —— 这正是 v1.5.0 详情页显示出 `{"version":1,"text":"qwqwqw",…}` 的原因。
+> 修法是提交纯文本；历史脏数据由 `Note.readable()` 反复解几层兼容掉。
 
 ### 14.4 频率限制
 
@@ -813,12 +825,65 @@ POST DeleteShuatiNote  nid=<笔记 id>   （通用签名）
 
 缺参会回 `{"res":1,"error":"nid field missing"}`。
 
-### 14.7 代码位置
+### 14.7 上传音频：`OSSUploadAudio2.php`
 
-- Android：`data/Api.kt` 的 `publishNote()` / `deleteNote()` / `buildNoteContent()`，
-  `ui/AppViewModel.kt` 的 `publishNote()`（负责逐张传图再发），
-  `ui/screens/PublishNoteScreen.kt`（标题 / 正文 / 最多 9 图 / 分区）
-- Python：`fkst_sdk/services.py` 的 `publish_note()` / `delete_note()` / `build_note_content()`
+在 2.0.8 的字符串池里搜 `OSS`，挖到 5 个上传脚本 —— 除了已知的图片/文件，还有音频和视频：
+
+```
++https://api.yaerxing.com/OSSImportPaper.php
++https://api.yaerxing.com/OSSUploadFile2.php
+,https://api.yaerxing.com/OSSUploadAudio2.php      ← 音频
+,https://api.yaerxing.com/OSSUploadVideo2.php      ← 视频
+,https://api.yaerxing.com/OSSUploadImage4.php
+```
+
+实测 `OSSUploadAudio2.php`：
+
+| 项 | 结论 |
+| --- | --- |
+| 签名 | 通用签名 |
+| 参数 | 文件字段名 `file`，**不需要 `dir_name`**（传了会被忽略） |
+| 格式 | **只收 `.mp3`**，而且服务端**按扩展名判断**（内容是 wav、文件名写成 `.mp3` 照样收） |
+| 成功 | `{"res":0,"url":"http://imgcdn.yaerxing.com/audio/2026/09/25/17903292278223.mp3"}` |
+| 失败 | `{"res":1,"error":"upload audio failed"}` —— wav / m4a / 无扩展名都回这个 |
+
+注意返回的域名是 `imgcdn.yaerxing.com/audio/…`，不是 `audiocdn.yaerxing.com`
+（后者是题目/试卷资源的 CDN，连图片都放在那儿，跟笔记无关）。
+
+```
+$ python -c "from fkst_sdk import services; print(services.upload_audio(c, 'a.mp3'))"
+{'res': 0, 'url': 'http://imgcdn.yaerxing.com/audio/2026/09/25/17903292278223.mp3'}
+```
+
+**但笔记里并没有音频字段。** 证据：
+
+- 扫过 11 个分区共 363 篇社区笔记，`content` / `urls` / `title` 里**零音频痕迹**
+  （没有 `audiocdn`、没有 `.mp3`、没有 `OSSUploadAudio`）；
+- `si_urls` / `si_label` 这类字段从未在任何真实数据里出现过 ——
+  它们只存在于本报告早期臆想的模板里（见 14.3 的修订）；
+- 2.0.8 的字符串池里也没有 `<audio` 这种东西。
+
+所以音频只能是**客户端自己的扩展**：
+
+- 上传拿到 url 后，在正文末尾追加一行 `[音频] <url>`；
+- 我们的客户端读到这一行就渲染成播放器（`ui/components/AudioPlayer.kt`，
+  用系统 `MediaPlayer`，不引额外依赖）；
+- 官方端会把这一行显示成普通文字，不影响阅读。
+
+`OSSUploadVideo2.php` 同理存在，但**未做验证**。
+
+### 14.8 代码位置
+
+- Android：
+  - `data/Api.kt` —— `publishNote()` / `deleteNote()` / `buildNoteContent()` / `uploadAudio()`
+  - `data/Models.kt` —— `Note.readable()` / `decodeContent()`（正文归一化）
+  - `core/FkstClient.kt` —— `uploadImage()` / `uploadFile()` / `uploadAudio()`
+  - `core/Constants.kt` —— `AUDIO_MARK` / `AUDIO_LINE_RE` / `UPLOAD_AUDIO` 端点
+  - `ui/AppViewModel.kt` —— `publishNote()`（负责逐张传图、传音频再发）
+  - `ui/screens/PublishNoteScreen.kt` —— 标题 / 正文 / 最多 9 图 / 最多 3 段音频 / 分区
+  - `ui/components/AudioPlayer.kt` —— 正文里 `[音频] <url>` 的播放器
+- Python：`fkst_sdk/services.py` 的 `publish_note()` / `delete_note()` /
+  `build_note_content()` / `upload_audio()`，`fkst_sdk/client.py` 的 `upload_audio()`
 
 ---
 
