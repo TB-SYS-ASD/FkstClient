@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">疯狂刷题</string>
+    <string name="login_title">疯狂刷题</string>
+    <string name="login_subtitle">登录你的账号</string>
+    <string name="phone_hint">手机号</string>
+    <string name="password_hint">密码</string>
+    <string name="login">登录</string>
+    <string name="logout">退出登录</string>
+    <string name="remember_me">记住账号</string>
+    <string name="loading">加载中…</string>
+    <string name="retry">重试</string>
+    <string name="refresh">刷新</string>
+    <string name="empty">这里还什么都没有</string>
+    <string name="error_network">网络请求失败，请检查网络后重试</string>
+</resources>
