@@ -62,7 +62,7 @@ python main.py
 [android/README.md](android/README.md)。
 
 已构建好的安装包：
-- `release/FkstClient-v1.5.0-release.apk`
+- `release/FkstClient-v1.6.0-release.apk`
 
 构建方式（Windows 双击即可）：
 ```bash
