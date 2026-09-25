@@ -425,6 +425,105 @@ class AppViewModel(val repo: Repository) : ViewModel() {
         detailNote = note
     }
 
+    // ------------------------------------------------------------ 编辑 / 删除自己的笔记
+
+    /** 当前正在编辑配图的笔记 id（空表示不在编辑态） */
+    var editingNoteId by mutableStateOf("")
+        private set
+
+    /** 编辑页里待保存的图片地址（初始为笔记原有配图） */
+    var editingImages by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    var editingSaving by mutableStateOf(false)
+        private set
+
+    /** 这条笔记是不是我发的（拿 home_id 跟本机 mid 比） */
+    fun isMyNote(note: Note): Boolean {
+        val me = repo.currentMid()
+        return me.isNotBlank() && note.homeId.isNotBlank() && me == note.homeId
+    }
+
+    fun beginEditNote(note: Note) {
+        editingNoteId = note.id
+        // 用原图地址，避免把 CDN 的 resize 段再存回去
+        editingImages = note.originalImages
+    }
+
+    fun editAddImage(url: String) {
+        if (editingImages.size >= Constants.NOTE_IMAGE_MAX) {
+            toast = "最多 ${Constants.NOTE_IMAGE_MAX} 张图"
+            return
+        }
+        editingImages = editingImages + url
+    }
+
+    fun editRemoveImage(index: Int) {
+        editingImages = editingImages.filterIndexed { i, _ -> i != index }
+    }
+
+    fun cancelEditNote() {
+        editingNoteId = ""
+        editingImages = emptyList()
+    }
+
+    /** 保存配图改动（改的是**全部** urls，所以要连保留下来的旧图一起提交） */
+    fun saveNoteImages(onDone: (Boolean) -> Unit = {}) {
+        val id = editingNoteId
+        if (id.isBlank() || editingSaving) {
+            onDone(false)
+            return
+        }
+        editingSaving = true
+        viewModelScope.launch {
+            var ok = false
+            try {
+                val r = Api.updateNoteImages(client, id, editingImages)
+                val res = r.intOr("res", -1)
+                if (res == 0) {
+                    toast = "配图已更新"
+                    // 详情页与「我的笔记」都重拉，别让用户看着旧图
+                    detailNote = detailNote?.copy(images = editingImages)
+                    myNotesFeed = FeedState()
+                    cancelEditNote()
+                    ok = true
+                } else {
+                    toast = "保存失败：" + r.str("error").ifBlank {
+                        r.str("remind_hint").ifBlank { "服务端返回 $res" }
+                    }
+                }
+            } catch (t: Throwable) {
+                toast = "保存失败：${friendlyError(t)}"
+            } finally {
+                editingSaving = false
+                onDone(ok)
+            }
+        }
+    }
+
+    /** 删除自己发的笔记 */
+    fun deleteMyNote(noteId: String, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            var ok = false
+            try {
+                val r = Api.deleteNote(client, noteId)
+                if (r.intOr("res", -1) == 0) {
+                    toast = "已删除"
+                    myNotesFeed = FeedState()
+                    ok = true
+                } else {
+                    toast = "删除失败：" + r.str("error").ifBlank {
+                        r.str("remind_hint").ifBlank { "服务端未返回成功" }
+                    }
+                }
+            } catch (t: Throwable) {
+                toast = "删除失败：${friendlyError(t)}"
+            } finally {
+                onDone(ok)
+            }
+        }
+    }
+
     // ------------------------------------------------------------ 全屏看图
 
     var viewerImages by mutableStateOf<List<String>>(emptyList())

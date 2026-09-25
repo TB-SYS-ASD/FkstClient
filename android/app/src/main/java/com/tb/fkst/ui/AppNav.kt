@@ -44,6 +44,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.tb.fkst.core.Constants
 import com.tb.fkst.ui.screens.DiscoverScreen
+import com.tb.fkst.ui.screens.EditNoteScreen
 import com.tb.fkst.ui.screens.ImageViewerScreen
 import com.tb.fkst.ui.screens.LetterChatScreen
 import com.tb.fkst.ui.screens.LetterListScreen
@@ -77,6 +78,7 @@ object Routes {
     const val LETTER_CHAT = "letter_chat"
     const val VIEWER = "viewer"
     const val PUBLISH = "publish"
+    const val EDIT_NOTE = "edit_note"
 }
 
 @Composable
@@ -196,6 +198,9 @@ fun AppNavHost(vm: AppViewModel) {
         composable(Routes.VIEWER) { ImageViewerScreen(vm, nav) }
 
         composable(Routes.PUBLISH) { PublishNoteScreen(vm, nav) }
+
+        // 编辑已发笔记的配图（只能改图，标题正文服务端没开放）
+        composable(Routes.EDIT_NOTE) { EditNoteScreen(vm, nav) }
     }
 }
 

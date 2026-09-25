@@ -201,13 +201,18 @@ object Api {
         return Paged(Note.list(r), !r.boolOr("over"))
     }
 
-    /** 收藏 / 取消收藏一条笔记 */
+    /**
+     * 收藏 / 取消收藏一条笔记。
+     *
+     * 走 CollectShuatiNote（nid + status），**不是** UpdateSTCollection ——
+     * 后者返回 res=0 但收藏列表里查不到，是个假成功的接口，详见 Constants 里的注释。
+     */
     suspend fun setCollection(client: FkstClient, noteId: String, on: Boolean): JSONObject =
         client.request(
-            "UPDATE_COLLECTION",
+            "SET_NOTE_COLLECTION",
             mapOf(
                 "status" to if (on) "1" else "0",
-                "object_id" to noteId,
+                "nid" to noteId,
             )
         )
 
@@ -477,6 +482,28 @@ object Api {
     suspend fun deleteNote(client: FkstClient, noteId: String): JSONObject {
         require(noteId.isNotBlank()) { "笔记 id 为空" }
         return client.request("DELETE_NOTE", mapOf("nid" to noteId), expectRes = false)
+    }
+
+    /**
+     * 改已发笔记的配图（`UpdateUploadNoteUrls`，id + urls）。
+     *
+     * `urls` 是**全量覆盖**：传什么就是什么，没传进去的旧图会被摘掉，
+     * 所以调用方要把保留下来的旧图一起拼进来。
+     *
+     * 服务端对不存在的 id 会回 `res=2`，是真有校验的（不像 UpdateSTCollection 那种
+     * 无脑 res=0），所以调用方可以直接拿 res 判断成败。
+     *
+     * 注意：只能改图，**标题和正文改不了** —— 服务端没有开放这两个接口。
+     */
+    suspend fun updateNoteImages(client: FkstClient, noteId: String, imageUrls: List<String>): JSONObject {
+        require(noteId.isNotBlank()) { "笔记 id 为空" }
+        return client.request(
+            "UPDATE_NOTE_URLS",
+            mapOf(
+                "id" to noteId,
+                "urls" to org.json.JSONArray(imageUrls.filter { it.isNotBlank() }).toString(),
+            ),
+        )
     }
 
     /**

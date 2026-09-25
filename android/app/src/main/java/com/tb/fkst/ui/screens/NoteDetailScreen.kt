@@ -24,12 +24,18 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -201,6 +207,60 @@ fun NoteDetailScreen(vm: AppViewModel, nav: NavHostController) {
                     }
                 },
                 actions = {
+                    // 自己的笔记才给「编辑配图 / 删除」，别人的不给
+                    if (vm.isMyNote(note)) {
+                        var menuOpen by remember { mutableStateOf(false) }
+                        var confirmDelete by remember { mutableStateOf(false) }
+
+                        if (confirmDelete) {
+                            AlertDialog(
+                                onDismissRequest = { confirmDelete = false },
+                                title = { Text("删除这条笔记？") },
+                                text = { Text("删掉就找不回来了，配图和评论一起没。") },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        confirmDelete = false
+                                        vm.deleteMyNote(note.id) { ok ->
+                                            if (ok) nav.popBackStack()
+                                        }
+                                    }) { Text("删除") }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { confirmDelete = false }) { Text("取消") }
+                                },
+                            )
+                        }
+
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "更多操作")
+                        }
+                        DropdownMenu(
+                            expanded = menuOpen,
+                            onDismissRequest = { menuOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("编辑配图") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Image, contentDescription = null)
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    vm.beginEditNote(note)
+                                    nav.navigate(com.tb.fkst.ui.Routes.EDIT_NOTE)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("删除笔记") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Delete, contentDescription = null)
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    confirmDelete = true
+                                },
+                            )
+                        }
+                    }
                     IconButton(onClick = {
                         val target = !liked
                         vm.likeNote(note.id, target) { ok ->

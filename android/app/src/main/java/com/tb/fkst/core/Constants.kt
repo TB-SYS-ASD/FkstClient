@@ -99,6 +99,9 @@ object Constants {
     /** 笔记配图目录 */
     const val IMAGE_DIR_NOTE = "stupnote"
 
+    /** 一条笔记最多几张配图（发布 / 编辑共用同一个上限） */
+    const val NOTE_IMAGE_MAX = 9
+
     /** 私信图片目录（⚠️ 实测非会员会回「请开通会员」） */
     const val IMAGE_DIR_LETTER = "stupletter"
 
@@ -401,16 +404,16 @@ object Endpoints {
             required = listOf("page"),
             defaults = mapOf("page" to "0"),
         ),
-        // 收藏 / 取消收藏：version + scene + status + object_id + object_type
-        // status=1 收藏，status=0 取消；object_type=2 笔记
-        "UPDATE_COLLECTION" to Endpoint(
-            path = "UpdateSTCollection",
-            required = listOf("status", "object_id"),
-            defaults = mapOf(
-                "version" to "1",
-                "scene" to "1",
-                "object_type" to "2",
-            ),
+        // 收藏 / 取消收藏：**nid + status**（status=1 收藏，status=0 取消）
+        //
+        // 2026-09-25 实测：这条是从官方端 dex 里挖出来的真接口。
+        // 之前用的 UpdateSTCollection 是个坑 —— 它同样返回 {"res":0}，
+        // 但收藏完再去查 GetCollectionShuatiNote1，**列表里根本没有这条**，
+        // 也就是「假成功、不落库」。CollectShuatiNote 才是真正生效的那个：
+        //   收藏 nid=5146280 → 收藏列表出现该 id；取消 → 从列表消失（可逆验证过）
+        "SET_NOTE_COLLECTION" to Endpoint(
+            path = "CollectShuatiNote",
+            required = listOf("status", "nid"),
         ),
 
         // ---------------- 关注 ----------------
@@ -464,6 +467,23 @@ object Endpoints {
         "DELETE_NOTE" to Endpoint(
             path = "DeleteShuatiNote",
             required = listOf("nid"),
+        ),
+
+        // ---------------- 编辑已发笔记的配图 ----------------
+        // 2026-09-25 从官方端 dex 挖出来并实测：id + urls（图片地址 JSON 数组，同发布格式）
+        //
+        // 可信度判据：拿**不存在的 id** 去调，服务端回 {"res":2} —— 说明它真的去
+        // 查笔记了，不是无脑成功。作为对比：
+        //   UpdateUploadNoteStatus（id+score+status）对不存在的 id 也回 res=0，
+        //   这种「怎么都成功」的接口跟之前踩过的 UpdateSTCollection 一个德性，
+        //   score/status 的取值语义也没有任何线索，所以**没有做进客户端**。
+        //
+        // 反过来，标题和正文**改不了**：翻遍 dex 只有 UpdateUploadNoteUrls /
+        // UpdateUploadNoteStatus / UpdateNoteTag 三个，UpdateNoteTag 实测回
+        // 「非本区管理员」（要管理员权限），没有改标题正文的接口。
+        "UPDATE_NOTE_URLS" to Endpoint(
+            path = "UpdateUploadNoteUrls",
+            required = listOf("id", "urls"),
         ),
     )
 }

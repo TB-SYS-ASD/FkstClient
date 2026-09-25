@@ -329,17 +329,29 @@ def get_collection_notes(client: FkstClient, page: str = "0") -> list:
     return payload.get("notes") or []
 
 
-def update_collection(client: FkstClient, object_id, on: bool = True,
-                      scene: str = "1", object_type: str = "2") -> dict:
-    """收藏 / 取消收藏（status=1 收藏、0 取消）。
+def update_note_images(client: FkstClient, nid, urls) -> dict:
+    """改已发笔记的配图（**全量覆盖**，没传进去的旧图会被摘掉）。
 
-    注意：服务端对非法 scene 会回 "非法收藏"，但参数齐全时返回 res=0，
-    实际是否落库仍待观察（收藏列表 GetCollectionShuatiNote1 目前为空）。
+    服务端对不存在的 id 回 res=2，是真有校验的接口。
+    标题和正文改不了 —— 服务端没开放对应接口。
+    """
+    import json as _json
+    return client.request(
+        "UPDATE_NOTE_URLS", expect_res=False,
+        id=str(nid), urls=_json.dumps(list(urls), ensure_ascii=False),
+    )
+
+
+def collect_note(client: FkstClient, nid, on: bool = True) -> dict:
+    """收藏 / 取消收藏一条笔记（nid + status，status=1 收藏、0 取消）。
+
+    2026-09-25 实测：这才是真正落库的接口。收藏后 GetCollectionShuatiNote1
+    里能查到该 id，取消后消失（可逆验证过）。旧的 `UpdateSTCollection`
+    返回 res=0 但不落库，是假成功，别再用。
     """
     return client.request(
-        "UPDATE_COLLECTION", expect_res=False,
-        version="1", scene=str(scene), status="1" if on else "0",
-        object_id=str(object_id), object_type=str(object_type),
+        "SET_NOTE_COLLECTION", expect_res=False,
+        nid=str(nid), status="1" if on else "0",
     )
 
 

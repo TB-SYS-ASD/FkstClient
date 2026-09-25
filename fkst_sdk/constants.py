@@ -237,10 +237,17 @@ ENDPOINTS = {
         "required_params": ["page"],
         "default_params": {"page": "0"},
     },
-    "UPDATE_COLLECTION": {           # 收藏/取消收藏：version+scene(1)+status+object_id+object_type
-        "path": "UpdateSTCollection",
-        "required_params": ["status", "object_id"],
-        "default_params": {"version": "1", "scene": "1", "object_type": "2"},
+    "UPDATE_NOTE_URLS": {            # 改已发笔记的配图：id + urls（全量覆盖）
+        # 2026-09-25 实测：对不存在的 id 会回 res=2 —— 真有校验，不是无脑成功。
+        # 标题和正文**没有**对应接口，改不了。
+        "path": "UpdateUploadNoteUrls",
+        "required_params": ["id", "urls"],
+    },
+    "SET_NOTE_COLLECTION": {         # 收藏/取消收藏：nid + status(1=收藏, 0=取消)
+        # 2026-09-25 从官方端 dex 挖出来并实测：这条**真的落库**。
+        # 旧的 UpdateSTCollection 也返回 res=0，但收藏列表里查不到（假成功）。
+        "path": "CollectShuatiNote",
+        "required_params": ["status", "nid"],
     },
 
     # --- 点赞 ---

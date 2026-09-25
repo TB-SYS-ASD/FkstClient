@@ -950,3 +950,91 @@ GET GetSTBuddies type=2 page=1 → {"over":true,"buddies":[],"res":0}
 所以归档里比「本页最老那条」更早的消息只是没被这一页覆盖，**不是被撤回**。
 判定时用本页最老的 `created_at` 当水位线，比它更早的一律不算撤回；
 整页都没有时间戳时干脆不判 —— 宁可漏判也不能冤枉。
+
+---
+
+## 十七、官方端 dex（2.3.3 完整脱壳代码）带来的修正
+
+2026-09-25 拿到了官方 App 的**脱壳 dex**（5 个文件、33.9 MB、34,105 个类 /
+253,645 个方法 / 216,546 条字符串），不再是之前那个只剩 `com.ashield.Stub`
+的加固壳。扫完字符串池后，有几条结论被**推翻或修正**，这里记下来。
+
+### 17.1 收藏：真正的接口是 `CollectShuatiNote`
+
+之前客户端用的是 `UpdateSTCollection`（`version + scene + status + object_id +
+object_type`），它返回 `{"res":0}`，看着是成功了。但对照实验打脸了：
+
+| 步骤 | `UpdateSTCollection` | `CollectShuatiNote` |
+| --- | --- | --- |
+| 请求 | status=1 + object_id=<真 nid> | status=1 + nid=<真 nid> |
+| 响应 | `{"res":0}` | `{"res":0}` |
+| 再查 `GetCollectionShuatiNote1` | **列表里没有这条** | **列表里出现了这条** |
+| 取消收藏后再查 | —— | 从列表消失 |
+
+结论：`UpdateSTCollection` 是个**假成功**接口（res=0 但不落库），
+`CollectShuatiNote`（`nid` + `status`）才是真生效的。客户端已换掉。
+
+**判据方法可以复用**：拿一个**肯定不存在的 id** 去打，看服务端有没有校验。
+`CollectShuatiNote` 对不存在的 nid 回 `{"res":2,"remind_hint":"文章已被删除"}` ——
+说明它真的去查笔记了；`UpdateSTCollection` 那类无脑 `res:0` 的接口则要警惕。
+
+### 17.2 编辑已发笔记：只能改配图
+
+dex 里跟笔记编辑相关的接口一共只有三个，逐个实测：
+
+| 接口 | 参数 | 实测 | 结论 |
+| --- | --- | --- | --- |
+| `UpdateUploadNoteUrls` | `id` + `urls` | 真 id → `res:0`；**不存在的 id → `res:2`** | 有校验，**可用**（已做进客户端） |
+| `UpdateUploadNoteStatus` | `id` + `score` + `status` | 真 id → `res:0`；**不存在的 id 也 `res:0`** | 无脑成功，且 score/status 语义不明，**没做** |
+| `UpdateNoteTag` | `id` + `note_tag` + `grade_tag` | `{"res":1,"remind_hint":"非本区管理员"}` | 要管理员权限，普通用户用不了 |
+| `UpdateUploadNoteFilter` | —— | HTTP 404 | 已下线 |
+
+**标题和正文改不了**：`UploadNote2` 是唯一写笔记的接口，但它不带 id 就是新建；
+带 id 时服务端并不走更新路径（这次测试账号恰好被封禁，无法进一步验证）。
+翻遍字符串池也没有别的写正文接口，所以「编辑笔记」在客户端里只做配图。
+
+`urls` 是**全量覆盖**，不是增量追加：提交什么就是什么，没传进去的旧图会被摘掉。
+
+### 17.3 签名盐：没有换
+
+dex 里有个很显眼的串 `api.yaerxing.com-f11cb6c45e3317e3d624038a657d5ad1-`，
+32 位十六进制，看着就是新版盐。实测结论是**不是**：
+
+```
+现盐 9bldwb2d5d02e81h          → {"res":0,"notes":[…]}     正常
+f11cb6c45e3317e3d624038a657d5ad1 → {"res":1,"error":"url illegal!"}
+```
+
+现盐一切正常。另外 dex 里**找不到** `F.K*$t` 模板串和 api_key
+（`17bf6ed3b808eb7dcfa5wa0f1f0cf1de`）—— 签名实现在
+`com.yaerxing.fkst.security.NativeHelper`，走 native。
+那个 32 位串用途不明，大概率是 native 侧推送 / IM / 统计用的，不影响当前协议。
+
+### 17.4 刷题 H5 答题页：仍然进不去
+
+dex 里一共 6 个刷题 H5 页面：
+
+```
+/shuati/questionExercise-v17            /shuati/paperExercises-v18
+/shuati/verifyShareQuestionExercise-v2  /shuati/xcgExercise-v2
+/shuati/wrongQuestionExercise-v2        /shuati/folderWrongQuestionExercise-v6
+```
+
+原本指望 `verifyShareQuestionExercise-v2`（分享验证页）可能不带登录门禁，
+实测**一样被挡**。而且换参数毫无反应：
+
+- `questionExercise-v17` 恒回「请求不合法-1」
+- `verifyShareQuestionExercise-v2` 恒回「非法访问」
+- 试 `id` / `qid` / `ids` / `paper_id` / `id+kid` / `id+source` / `id+xd+subject`
+  等 8 种组合，**提示一个字都没变**
+
+参数怎么变提示都不变，说明卡的是**登录态 / 签名**这一层，不是参数名猜错了。
+所以「试卷 → 题目」这条链依旧是断的，刷题模块维持删除状态。
+
+### 17.5 顺带确认的几条
+
+- `/FKSTVersion?code=197&rom=<机型>` 是官方自己的版本检查接口，**无需登录**，
+  实测能拿到最新 2.3.3 的信息和下载地址。
+- `UpdateUploadPaperUrls` / `UpdateUploadPaperStatus` 也有（改试卷图 / 状态），
+  跟笔记那两个是一对，但试卷侧本来就取不到题，没接。
+- 官方自己的协议页在 `/yex/privacyPolicy?app=fkst`，做用户政策页时参考过。
