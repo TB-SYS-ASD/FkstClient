@@ -190,6 +190,34 @@ object Constants {
     // 清理缓存时不会碰这些「用户数据」：备注 / 置顶 / 投币记录 / 壁纸 / 防撤回备份
     // （壁纸和防撤回备份另外给了单独的清除入口）。
     const val AUTHOR_CACHE_LIMIT = 400
+
+    // ---------------------------------------------------------------- 更新检查
+    //
+    // 版本号从 GitHub Releases 读：`/releases/latest` 只会返回最新的**正式版**
+    // （草稿和预发布自动排除），所以发版时记得别勾 pre-release，否则这里查不到。
+    // 换仓库只改下面 owner / repo 两行，URL 都是拼出来的。
+    //
+    // ⚠️ 已知坑（2026-09-25 实测）：latest 取的是**最新发布的 Release**，跟 tag 名
+    // 规不规范没关系 —— 现有 Release 的 tag 叫 `qwq`。tag 解析不出 v?x.y.z 时
+    // 客户端会**静默跳过**，不会误报。之后发版把 tag 起成 `v1.7.0` 这种规范名，
+    // 弹窗和「跳过此版本」才有的比。
+
+    /** GitHub 账号 */
+    const val GITHUB_OWNER = "TB-SYS-ASD"
+
+    /** 仓库名 */
+    const val GITHUB_REPO = "FkstClient"
+
+    /** releases/latest 接口（JSON） */
+    const val GITHUB_LATEST_API =
+        "https://api.github.com/repos/TB-SYS-ASD/FkstClient/releases/latest"
+
+    /** 浏览器打开的发布页 */
+    const val GITHUB_RELEASES_PAGE =
+        "https://github.com/TB-SYS-ASD/FkstClient/releases"
+
+    /** 检查更新的超时（GitHub 在部分网络下会抽风，别等太久） */
+    const val UPDATE_TIMEOUT_MS = 12_000
 }
 
 /**

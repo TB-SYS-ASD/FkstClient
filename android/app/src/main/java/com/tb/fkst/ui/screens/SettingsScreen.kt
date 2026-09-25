@@ -46,7 +46,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.tb.fkst.BuildConfig
 import com.tb.fkst.core.Constants
+import com.tb.fkst.core.UpdateChecker
 import com.tb.fkst.data.ThemeMode
 import com.tb.fkst.data.ThemeStyle
 import com.tb.fkst.ui.AppViewModel
@@ -388,7 +390,40 @@ fun SettingsScreen(vm: AppViewModel, nav: NavHostController) {
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Spacer(Modifier.height(10.dp))
-                    AboutLine("应用版本", "1.5.0")
+
+                    // ---- 检查更新（手动）----
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("检查更新", style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium)
+                            Text(
+                                text = vm.updateHint
+                                    ?: "当前 ${BuildConfig.VERSION_NAME} · 从 GitHub Releases 检查",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { vm.checkForUpdate(silent = false) },
+                            enabled = !vm.updateChecking,
+                        ) {
+                            if (vm.updateChecking) {
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            } else {
+                                Text("检查")
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+                    AboutLine("应用版本", BuildConfig.VERSION_NAME)
+                    AboutLine("更新来源", "github.com/${Constants.GITHUB_OWNER}/${Constants.GITHUB_REPO}")
                     AboutLine("接口地址", Constants.API_BASE.trimEnd('/'))
                     AboutLine("应用标识", "com.yaerxing.fkst 第三方客户端")
                     AboutLine("动态取色", if (supportsMonet) "系统支持" else "系统不支持")

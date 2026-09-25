@@ -6,9 +6,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tb.fkst.BuildConfig
 import com.tb.fkst.core.Constants
 import com.tb.fkst.core.FkstApiException
 import com.tb.fkst.core.MediaSaver
+import com.tb.fkst.core.UpdateChecker
+import com.tb.fkst.core.UpdateInfo
 import com.tb.fkst.core.intOr
 import com.tb.fkst.core.str
 import com.tb.fkst.data.Api
@@ -70,6 +73,90 @@ class AppViewModel(val repo: Repository) : ViewModel() {
         private set
 
     var toast by mutableStateOf<String?>(null)
+
+    // ------------------------------------------------------------ 首次启动引导
+
+    /** 用户政策是否已同意（未同意时 AppNav 挡在引导页，进不了主界面） */
+    var policyAgreed by mutableStateOf(repo.policyAgreed)
+        private set
+
+    /** 政策同意后跟着展示一次的「为什么没有刷题模块」说明，看完置 true */
+    var noExerciseExplained by mutableStateOf(repo.noExerciseExplained)
+        private set
+
+    fun acceptPolicy() {
+        repo.policyAgreed = true
+        policyAgreed = true
+    }
+
+    fun markNoExerciseExplained() {
+        repo.noExerciseExplained = true
+        noExerciseExplained = true
+    }
+
+    /** 引导页点了「不同意」：关闭整个应用 */
+    fun exitApp() {
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
+    // ------------------------------------------------------------ 更新检查
+
+    /**
+     * 启动时静默检查的结果。null = 还没有可提示的新版本（或检查失败，都静默）。
+     * 弹窗的「跳过此版本」只改内存里这个字段 + 本地记录，重启后若仍是同一版本会再提示。
+     */
+    var updateInfo by mutableStateOf<UpdateInfo?>(null)
+        private set
+
+    /** 手动检查时的状态：null = 空闲 */
+    var updateChecking by mutableStateOf(false)
+        private set
+
+    /** 手动「检查更新」按钮的反馈文案 */
+    var updateHint by mutableStateOf<String?>(null)
+        private set
+
+    /** 「跳过此版本」记录的 tag，避免同一版本反复弹 */
+    var skippedUpdateTag by mutableStateOf(repo.skippedUpdateTag)
+        private set
+
+    fun checkForUpdate(silent: Boolean) {
+        if (updateChecking) return
+        if (!silent) {
+            updateChecking = true
+            updateHint = null
+        }
+        viewModelScope.launch {
+            val info = UpdateChecker.check()
+            if (!silent) updateChecking = false
+            if (info == null) {
+                // 静默检查（启动时）：失败就当无事发生
+                if (!silent) updateHint = "检查失败：无法访问 GitHub（网络受限或超时）"
+                return@launch
+            }
+            if (info.hasUpdate) {
+                if (info.latestTag != skippedUpdateTag) {
+                    updateInfo = info
+                } else if (!silent) {
+                    updateHint = "已是最新提示的 ${info.latestTag}（此前选择了跳过）"
+                }
+            } else {
+                if (!silent) updateHint = "当前已是最新版本（${UpdateChecker.currentVersion}）"
+            }
+        }
+    }
+
+    /** 弹窗里点了「跳过此版本」 */
+    fun skipUpdate() {
+        updateInfo?.let { skippedUpdateTag = it.latestTag }
+        repo.skippedUpdateTag = skippedUpdateTag
+        updateInfo = null
+    }
+
+    /** 弹窗关掉（本次启动不再弹） */
+    fun dismissUpdate() {
+        updateInfo = null
+    }
 
     // ------------------------------------------------------------ 外观偏好
 
@@ -396,12 +483,15 @@ class AppViewModel(val repo: Repository) : ViewModel() {
 
     fun boot() {
         viewModelScope.launch {
+            UpdateChecker.currentVersion = BuildConfig.VERSION_NAME
             loggedIn = repo.restoreSession()
             booted = true
             if (loggedIn) {
                 refreshMeNow()
                 maybeAutoCheckIn()
             }
+            // 启动时静默检查一次更新：失败不打扰，有新版且没被跳过才弹
+            checkForUpdate(silent = true)
         }
     }
 

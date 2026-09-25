@@ -11,8 +11,8 @@ android {
         applicationId = "com.tb.fkst"
         minSdk = 24
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.6.0"
+        versionCode = 8
+        versionName = "1.7.0"
         resourceConfigurations += listOf("zh", "en")
     }
 
@@ -67,6 +67,8 @@ android {
 
     buildFeatures {
         compose = true
+        // BuildConfig.VERSION_NAME / VERSION_CODE（关于页、更新检查用）
+        buildConfig = true
     }
 
     composeOptions {

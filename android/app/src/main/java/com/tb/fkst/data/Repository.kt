@@ -159,6 +159,31 @@ class Repository(private val appContext: Context) {
         }.getOrDefault(ThemeStyle.DEFAULT)
         set(v) = prefs.edit().putString("theme_style", v.name).apply()
 
+    // -------------------------------------------------------- 首次启动引导
+
+    /**
+     * 用户政策是否已同意。同意过就不再弹 —— 政策页只在第一次打开 App 时出现。
+     * （「清除数据」会把这个标记一起清掉，政策页会再弹一次，这是预期行为。）
+     */
+    var policyAgreed: Boolean
+        get() = prefs.getBoolean("policy_agreed", false)
+        set(v) = prefs.edit().putBoolean("policy_agreed", v).apply()
+
+    /**
+     * 「为什么没有刷题模块」的说明页是否已看过。
+     * 同意政策后紧接着展示一次，看完（或点跳过）就不再出现。
+     */
+    var noExerciseExplained: Boolean
+        get() = prefs.getBoolean("no_exercise_explained", false)
+        set(v) = prefs.edit().putBoolean("no_exercise_explained", v).apply()
+
+    // -------------------------------------------------------- 更新检查
+
+    /** 「跳过此版本」记录的 Release tag（如 "v1.7.0"）；空 = 没跳过过任何版本 */
+    var skippedUpdateTag: String
+        get() = prefs.getString("skipped_update_tag", "") ?: ""
+        set(v) = prefs.edit().putString("skipped_update_tag", v).apply()
+
     // -------------------------------------------------------- 排版
 
     /**
