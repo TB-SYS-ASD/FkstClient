@@ -101,4 +101,13 @@ App 第一次启动时那页说明也还是这么写的。
 - 首次启动引导只在「政策未同意」时出现，老用户覆盖安装不会重复弹。
 - 更新检查读的是 GitHub `releases/latest`，tag 必须是 `v?x.y.z` 这种规范格式，
   且**不能勾 pre-release**，否则客户端取不到。
-```
+
+## 安装包校验
+
+| | |
+| --- | --- |
+| 文件 | `FkstClient-v1.8.0-release.apk` |
+| 体积 | 10,902,262 字节（约 10.4 MB） |
+| SHA256 | `b0a5cd55c5fcae29b81289af2076f86388088c8504503fb3396f15ad631965a2` |
+| versionCode / versionName | 9 / 1.8.0 |
+| minSdk / targetSdk | 24（Android 7.0）/ 34 |
