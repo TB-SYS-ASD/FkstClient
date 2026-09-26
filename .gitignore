@@ -1,13 +1,5 @@
-# ---------------- 凭据与本地配置 ----------------
-# 账号密码（从 .env.example 复制一份改名）
-.env
-.env.production
-.env.local
-
-# 登录会话缓存
-user_session.json
-
-# Android 本地 SDK 路径（build-apk.cmd 会自动生成）
+# ---------------- Android ----------------
+# 本地 SDK 路径（build-apk.cmd 会自动生成）
 local.properties
 android/local.properties
 
@@ -26,22 +18,14 @@ android/captures/
 *.hprof
 *.apk.idsig
 
-# ---------------- Python ----------------
+# ---------------- Python（fkst_sdk / tools）----------------
 __pycache__/
 **/__pycache__/
 *.py[cod]
-.venv/
-venv/
-env/
-.pytest_cache/
 .cache/
-hars/
 
 # ---------------- 运行态 ----------------
 logs/
-bot/state.json
-like_run.log
-r_key_fix_summary.md
 
 # ---------------- 编辑器 / 系统 ----------------
 .vscode/
