@@ -23,8 +23,15 @@ object Api {
     suspend fun profile(client: FkstClient, homeId: String): UserProfile =
         UserProfile.from(homeId, client.request("GET_USER_DATA", mapOf("home_id" to homeId)))
 
-    suspend fun notices(client: FkstClient, type: String = "2", page: Int = 0): Paged<Notice> {
-        val r = client.request("GET_NOTICES2", mapOf("type" to type, "page" to page.toString()))
+    /**
+     * 消息通知（GetSTNotices）。
+     *
+     * `type`：0 全部 / 1 系统 / 2 评论 / 3 点赞 / 4 投币（1 已实测，2~4 为推断，见 NoticeKind）。
+     *
+     * ⚠️ 别再用 `GetSTNotices2`：实测恒返回空数组，客户端之前就是被它坑成「永远没消息」。
+     */
+    suspend fun notices(client: FkstClient, type: String = "0", page: Int = 0): Paged<Notice> {
+        val r = client.request("GET_NOTICES", mapOf("type" to type, "page" to page.toString()))
         return Paged(Notice.list(r), !r.boolOr("over"))
     }
 
@@ -142,23 +149,37 @@ object Api {
                 id = c.id, content = c.content, relayContent = "",
                 createdAt = c.createdAt, fid = commentId,
                 nickName = c.nickName, avatar = c.avatar, homeId = c.homeId,
+                contentUrl = c.contentUrl,
             )
         }
     }
 
-    /** 发评论；parentCommentId = "0" 表示顶层评论 */
+    /**
+     * 发评论；parentCommentId = "0" 表示顶层评论。
+     *
+     * @param imageUrl 评论配图，走 `content_url`（跟官方端发作业评论同一个字段名）。
+     *                 传空串表示纯文字。
+     *
+     * ⚠️ 这条**没能端到端验证**：测试账号发评论恒回 `res=1`（疑似被限制发言），
+     * 参数名是从官方 dex 里 `WorkCommentFragment` 提交 `content_url` 挖出来的，
+     * 而笔记评论的返回条目里确实有 `content_url` 这一列。
+     */
     suspend fun postComment(
         client: FkstClient,
         content: String,
         noteId: String,
         parentCommentId: String = "0",
+        imageUrl: String = "",
     ): JSONObject {
         val text = content.trim()
-        require(text.isNotEmpty()) { "评论内容不能为空" }
-        return client.request(
-            "SET_NOTE_COMMENT1",
-            mapOf("content" to text, "nid" to noteId, "fid" to parentCommentId)
+        require(text.isNotEmpty() || imageUrl.isNotBlank()) { "说点什么，或者配张图" }
+        val params = mutableMapOf(
+            "content" to text,
+            "nid" to noteId,
+            "fid" to parentCommentId,
         )
+        if (imageUrl.isNotBlank()) params["content_url"] = imageUrl.trim()
+        return client.request("SET_NOTE_COMMENT1", params)
     }
 
     suspend fun deleteComment(client: FkstClient, commentId: String): JSONObject =
@@ -172,8 +193,9 @@ object Api {
             mapOf("nid" to noteId, "status" to if (like) "1" else "0")
         )
 
+    /** 赞评论。实测少传 status 服务端会报 "status field missing"，所以这里固定带 1 */
     suspend fun likeComment(client: FkstClient, commentId: String): JSONObject =
-        client.request("SET_NOTE_COMMENT_LIKE", mapOf("id" to commentId))
+        client.request("SET_NOTE_COMMENT_LIKE", mapOf("id" to commentId, "status" to "1"))
 
     /** 关注 / 取消关注（STFollow：status=1 关注、status=2 取消关注） */
     suspend fun followUser(client: FkstClient, homeId: String, follow: Boolean = true): JSONObject =

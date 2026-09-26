@@ -85,6 +85,23 @@ import com.tb.fkst.ui.components.countText
 import com.tb.fkst.ui.components.timeAgo
 import com.tb.fkst.ui.friendlyError
 import kotlinx.coroutines.launch
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/** 单条评论配图上限 10MB（与服务端一致） */
+private const val MAX_COMMENT_IMAGE_BYTES = 10 * 1024 * 1024
+
+/** 评论草稿图：本地预览 uri + 上传后的线上地址 */
+private data class DraftImage(
+    val uri: Uri,
+    val url: String = "",
+    val uploading: Boolean = false,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,6 +113,7 @@ fun NoteDetailScreen(vm: AppViewModel, nav: NavHostController) {
     }
 
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     var detail by remember(note.id) { mutableStateOf<NoteDetail?>(null) }
     var loading by remember(note.id) { mutableStateOf(true) }
@@ -125,6 +143,43 @@ fun NoteDetailScreen(vm: AppViewModel, nav: NavHostController) {
     // 回复展开缓存：commentId -> replies
     val expanded = remember(note.id) { mutableStateMapOf<String, List<Reply>>() }
     val loadingReplies = remember(note.id) { mutableStateListOf<String>() }
+
+    // 评论配图（草稿）：本地预览 uri + 上传后的线上地址
+    var draftImage by remember(note.id) { mutableStateOf<DraftImage?>(null) }
+
+    // 选图 → 先传笔记图库，拿到地址再随评论发出去（字段名 content_url，跟官方发作业评论同源）
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        draftImage = DraftImage(uri = uri, uploading = true)
+        scope.launch {
+            val up = withContext(Dispatchers.IO) {
+                runCatching {
+                    val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: return@runCatching null
+                    if (bytes.size > MAX_COMMENT_IMAGE_BYTES) {
+                        vm.toast = "图片超过 10MB，太大了"; return@runCatching null
+                    }
+                    Api.uploadImage(
+                        vm.client, bytes,
+                        "comment_${System.currentTimeMillis()}.jpg", mime,
+                        dirName = Constants.IMAGE_DIR_NOTE, allowFallback = false,
+                    )
+                }.getOrNull()
+            }
+            when {
+                up == null -> draftImage = null
+                up.illegal -> { vm.toast = "图片被平台判为违规，换一张"; draftImage = null }
+                up.url.isBlank() -> {
+                    vm.toast = "图片上传失败：${up.error.ifBlank { "未知原因" }}"
+                    draftImage = null
+                }
+                else -> draftImage = DraftImage(uri = uri, url = up.url)
+            }
+        }
+    }
 
     fun reloadComments() {
         scope.launch {
@@ -177,14 +232,16 @@ fun NoteDetailScreen(vm: AppViewModel, nav: NavHostController) {
 
     fun sendComment() {
         val text = input.trim()
-        if (text.isEmpty() || sending) return
+        val img = draftImage?.url
+        if ((text.isEmpty() && img.isNullOrBlank()) || sending) return
         sending = true
         val parent = replyTarget?.id ?: "0"
-        vm.postComment(note.id, text, parent) { ok ->
+        vm.postComment(note.id, text, parent, img ?: "") { ok ->
             sending = false
             if (ok) {
                 input = ""
                 replyTarget = null
+                draftImage = null
                 vm.toast = "已发送"
                 reloadComments()
             }
@@ -302,13 +359,84 @@ fun NoteDetailScreen(vm: AppViewModel, nav: NavHostController) {
                             )
                         }
                     }
+
+                    // 评论配图预览（上传中显示转圈，可一键移除）
+                    draftImage?.let { d ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 12.dp, end = 12.dp, top = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                            ) {
+                                AsyncImage(
+                                    model = d.uri,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                if (d.uploading) {
+                                    Box(
+                                        Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        CircularProgressIndicator(
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(22.dp),
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = { draftImage = null },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(22.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "移除图片",
+                                        modifier = Modifier.size(14.dp),
+                                    )
+                                }
+                            }
+                            if (d.uploading) {
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "图片上传中…",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .imePadding()
-                            .padding(start = 12.dp, end = 6.dp, top = 4.dp, bottom = 10.dp),
+                            .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 10.dp),
                         verticalAlignment = Alignment.Bottom,
                     ) {
+                        // 发图按钮：选好图后先传笔记图库，再随评论发出
+                        IconButton(
+                            onClick = { imagePicker.launch("image/*") },
+                            enabled = !sending && draftImage == null,
+                        ) {
+                            Icon(
+                                Icons.Filled.Image,
+                                contentDescription = "发图片",
+                                tint = if (draftImage == null) {
+                                    LocalContentColor.current
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                },
+                            )
+                        }
                         OutlinedTextField(
                             value = input,
                             onValueChange = { input = it },
@@ -321,7 +449,8 @@ fun NoteDetailScreen(vm: AppViewModel, nav: NavHostController) {
                         )
                         IconButton(
                             onClick = { sendComment() },
-                            enabled = input.isNotBlank() && !sending,
+                            enabled = (input.isNotBlank() || draftImage?.url?.isNotBlank() == true)
+                                && !sending && draftImage?.uploading != true,
                         ) {
                             if (sending) {
                                 CircularProgressIndicator(
@@ -694,6 +823,10 @@ fun NoteDetailScreen(vm: AppViewModel, nav: NavHostController) {
                         vm.userTarget = homeId
                         nav.navigate(Routes.USER)
                     },
+                    onImageClick = { url ->
+                        vm.openViewer(listOf(url), 0, "评论图片")
+                        nav.navigate(Routes.VIEWER)
+                    },
                     onExpand = {
                         loadingReplies.add(c.id)
                         scope.launch {
@@ -750,6 +883,7 @@ private fun CommentRow(
     onReply: () -> Unit,
     onLike: () -> Unit,
     onOpenUser: (String) -> Unit,
+    onImageClick: (String) -> Unit,
     onExpand: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
@@ -779,6 +913,22 @@ private fun CommentRow(
                     Text(
                         text = comment.display,
                         style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+
+                // 评论配图（content_url）：点开进全屏查看器
+                if (comment.contentUrl.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    AsyncImage(
+                        model = comment.contentUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 200.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                            .clickable { onImageClick(comment.contentUrl) },
                     )
                 }
 
@@ -825,6 +975,20 @@ private fun CommentRow(
                                         append(r.display)
                                     },
                                     style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            if (r.contentUrl.isNotBlank()) {
+                                Spacer(Modifier.height(4.dp))
+                                AsyncImage(
+                                    model = r.contentUrl,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 140.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                        .clickable { onImageClick(r.contentUrl) },
                                 )
                             }
                         }

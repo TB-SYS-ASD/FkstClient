@@ -336,10 +336,20 @@ object Endpoints {
             defaults = mapOf("type" to "1", "page" to "0"),
         ),
         "GET_BLACK_LIST" to Endpoint(path = "GetSTBlackList"),
-        "GET_NOTICES2" to Endpoint(
-            path = "GetSTNotices2",
+        //
+        // ⚠️ 2026-09-26 实测：`GetSTNotices2` 对这个账号**恒返回空数组**，
+        // 而老的 `GetSTNotices`（不带 2）能正常返回通知（type=1 有 6 条）。
+        // 所以这里走 v1。字段：id / content / type / sub_type / object_id /
+        // is_read / created_at / logo（评论、点赞这类还会有 nick_name、home_id）。
+        //
+        // type 语义（官方端 tab 是「评论 / 点赞 / 全部 / 系统消息」，
+        // 跟 GetSTMyData5 的 messages[{type:1..4}] 对得上）：
+        //   0 = 全部（实测传 0 返回所有类型）  1 = 系统消息（已验证：全是系统文案）
+        //   2 = 评论    3 = 点赞    4 = 投币/其它（这两个是推断值，见 Notice.kind 的注释）
+        "GET_NOTICES" to Endpoint(
+            path = "GetSTNotices",
             required = listOf("type", "page"),
-            defaults = mapOf("type" to "2", "page" to "0"),
+            defaults = mapOf("type" to "0", "page" to "0"),
         ),
         // ---------------- 私信（信件） ----------------
         // flag=2 首次打开（附带对方 member 资料），flag=1 翻页取更早消息
@@ -440,7 +450,12 @@ object Endpoints {
             defaults = mapOf("fid" to "0"),
         ),
         "DEL_NOTE_COMMENT" to Endpoint(path = "DelSTNoteComment", required = listOf("id")),
-        "SET_NOTE_COMMENT_LIKE" to Endpoint(path = "SetSTNoteCommentLike", required = listOf("id")),
+        // 评论点赞：实测少了 status 会报 "status field missing"，必须有
+        "SET_NOTE_COMMENT_LIKE" to Endpoint(
+            path = "SetSTNoteCommentLike",
+            required = listOf("id", "status"),
+            defaults = mapOf("status" to "1"),
+        ),
         // 关注 / 取消关注：status=1 关注、status=2 取消关注（实测）
         "FOLLOW_USER" to Endpoint(
             path = "STFollow",

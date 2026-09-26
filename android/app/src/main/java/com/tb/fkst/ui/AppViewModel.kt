@@ -875,12 +875,38 @@ class AppViewModel(val repo: Repository) : ViewModel() {
         }
     }
 
+    /** 消息通知当前看哪一类：0 全部 / 1 系统 / 2 评论 / 3 点赞 */
+    var noticesType by mutableStateOf("0")
+        private set
+
+    /** 切分类（消息页顶部的筛选条） */
+    fun selectNoticesType(type: String) {
+        if (noticesType == type) return
+        noticesType = type
+        loadNotices(true)
+    }
+
     fun loadNotices(reset: Boolean = false) {
         viewModelScope.launch {
             loadInto(noticesFeed, { noticesFeed = it }, reset) { page ->
-                Api.notices(client, "2", page)
+                Api.notices(client, noticesType, page)
             }
         }
+    }
+
+    /**
+     * 只知道文章 id 时打开详情（消息通知就只有 `object_id`）。
+     *
+     * 详情页本来就会按 id 去拉正文和评论，所以这里塞一个只有 id 的骨架 Note 就行。
+     */
+    fun openNoteById(noteId: String) {
+        if (noteId.isBlank()) return
+        detailNote = Note(
+            id = noteId, title = "", content = "", images = emptyList(), thumb = "",
+            authorName = "", authorAvatar = "", homeId = "",
+            likeCount = 0, selfLike = false, favoriteCount = 0,
+            createdAt = 0L, type = "",
+        )
     }
 
     // ------------------------------------------------------------ 试卷库
@@ -1142,11 +1168,12 @@ class AppViewModel(val repo: Repository) : ViewModel() {
         noteId: String,
         text: String,
         parentId: String = "0",
+        imageUrl: String = "",
         onDone: (Boolean) -> Unit = {},
     ) {
         viewModelScope.launch {
             try {
-                Api.postComment(client, text, noteId, parentId)
+                Api.postComment(client, text, noteId, parentId, imageUrl)
                 onDone(true)
             } catch (t: Throwable) {
                 toast = "发送失败：${friendlyError(t)}"

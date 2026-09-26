@@ -61,8 +61,10 @@ python main.py
 支持莫奈动态取色），位于 [`android/`](android/) 目录，详见
 [android/README.md](android/README.md)。
 
-已构建好的安装包（v1.9.0 在 GitHub 上标的是**测试版 / pre-release**）：
-- `release/FkstClient-v1.9.0-release.apk`
+已构建好的安装包（v1.10.0 在 GitHub 上标的是**测试版 / pre-release**）：
+- `release/FkstClient-v1.10.0-release.apk`
+
+> 上一版 v1.9.0（同样为测试版）同目录保留：`release/FkstClient-v1.9.0-release.apk`。
 
 构建方式（Windows 双击即可）：
 ```bash

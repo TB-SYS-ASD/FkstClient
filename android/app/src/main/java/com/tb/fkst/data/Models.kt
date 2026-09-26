@@ -168,6 +168,8 @@ data class Reply(
     val nickName: String,
     val avatar: String,
     val homeId: String,
+    /** 回复配图，同 [Comment.contentUrl] */
+    val contentUrl: String = "",
 ) {
     val display: String get() = com.tb.fkst.core.Crypto.plainContent(content)
 
@@ -181,6 +183,7 @@ data class Reply(
             nickName = o.str("nick_name"),
             avatar = o.str("logo"),
             homeId = o.str("home_id"),
+            contentUrl = o.str("content_url"),
         )
     }
 }
@@ -200,6 +203,14 @@ data class Comment(
     val likeStatus: Int,
     val isSelf: Boolean,
     val replies: List<Reply>,
+    /**
+     * 评论配图（`content_url`）。
+     *
+     * 官方端发作业评论时就会带这个字段（WorkCommentFragment 里 `content` /
+     * `fid` / `wid` / `content_url` 一起提交），笔记评论返回的条目里也有这列，
+     * 只是绝大多数评论为空串。服务端返回的是单个图片地址。
+     */
+    val contentUrl: String = "",
 ) {
     val display: String get() = com.tb.fkst.core.Crypto.plainContent(content)
 
@@ -222,6 +233,7 @@ data class Comment(
                 likeStatus = o.intOr("like_status"),
                 isSelf = o.boolOr("is_self"),
                 replies = list,
+                contentUrl = o.str("content_url"),
             )
         }
 
@@ -295,22 +307,94 @@ data class MyStats(
 }
 
 /** 消息通知 */
+/**
+ * 通知的类型。
+ *
+ * 取值来自 `GetSTNotices` 返回的 `type` 字段。
+ * 目前**只有 1（系统）是实测确认的**（返回的全是「你撰写的解析被老师认可」
+ * 「xxx 组已将您移出」这类系统文案，且 GetSTMyData5 的 messages 里 type=1 有计数）。
+ * 2/3/4 是按官方端 tab（评论 / 点赞 / 全部 / 系统消息）+ messages 的 type 1..4 推断的，
+ * 哪天拿到评论类通知的样本再回来校准，映射集中在这一个 enum 里，改一处就行。
+ */
+enum class NoticeKind {
+    COMMENT,   // 有人评论 / 回复
+    LIKE,      // 有人点赞
+    COIN,      // 有人投币
+    SYSTEM,    // 系统消息
+    UNKNOWN,   // 类型对不上，按「消息」展示
+}
+
+/**
+ * 一条消息通知（`GetSTNotices` 的 notices[]）。
+ *
+ * 老模型只认 title / content，界面上就只能干巴巴显示个标题。
+ * 现在按「谁 + 干了什么 + 内容」来渲染：
+ *
+ * ```
+ * [头像] 拾秋  评论了你的笔记
+ *        「这个作业帮也是扫的那个二维码了」
+ *        《如何一个月背完3500词》   ·  2 小时前
+ * ```
+ *
+ * 点击整卡跳到相关文章（`object_id` 就是文章 id，系统消息的 object_id
+ * 可能是群组 id，那种不给跳）。
+ */
 data class Notice(
     val id: String,
-    val title: String,
     val content: String,
     val createdAt: Long,
+    val type: String,
+    val subType: String,
+    val objectId: String,
+    val isRead: Boolean,
+    val logo: String,
     val nickName: String,
-    val avatar: String,
+    val homeId: String,
+    val noteTitle: String,
 ) {
+    val kind: NoticeKind
+        get() = when (type) {
+            "1" -> NoticeKind.SYSTEM
+            "2" -> NoticeKind.COMMENT
+            "3" -> NoticeKind.LIKE
+            "4" -> NoticeKind.COIN
+            // 类型对不上时：有昵称说明是「人干的」，没有就是系统
+            else -> if (nickName.isBlank()) NoticeKind.SYSTEM else NoticeKind.UNKNOWN
+        }
+
+    /** 是不是系统消息（没有发起人，也不用跳文章） */
+    val isSystem: Boolean get() = kind == NoticeKind.SYSTEM
+
+    /** 动作文案，拼在昵称后面 */
+    val action: String
+        get() = when (kind) {
+            NoticeKind.COMMENT -> if (subType == "1") "回复了你的评论" else "评论了你的笔记"
+            NoticeKind.LIKE -> if (subType == "2") "赞了你的评论" else "赞了你的笔记"
+            NoticeKind.COIN -> "给你投币了"
+            NoticeKind.SYSTEM -> "系统通知"
+            NoticeKind.UNKNOWN -> "给你发了一条消息"
+        }
+
+    /** 展示用的名字：系统消息没有昵称 */
+    val actor: String get() = if (kind == NoticeKind.SYSTEM) "" else nickName
+
+    /** 要跳的文章 id；系统消息 / 空 id 不给跳 */
+    val targetNoteId: String
+        get() = if (isSystem) "" else objectId.trim().takeIf { it.isNotBlank() && it != "0" }.orEmpty()
+
     companion object {
         fun from(o: JSONObject) = Notice(
             id = o.str("id"),
-            title = o.str("title"),
             content = o.str("content"),
             createdAt = o.longOr("created_at"),
+            type = o.str("type"),
+            subType = o.str("sub_type"),
+            objectId = o.str("object_id").ifBlank { o.str("nid") },
+            isRead = o.boolOr("is_read"),
+            logo = o.str("logo"),
             nickName = o.str("nick_name"),
-            avatar = o.str("logo"),
+            homeId = o.str("home_id"),
+            noteTitle = o.str("title").ifBlank { o.str("note_title") },
         )
 
         fun list(o: JSONObject): List<Notice> {
