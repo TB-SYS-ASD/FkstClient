@@ -2,6 +2,7 @@ package com.tb.fkst.core
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -54,14 +55,17 @@ object UpdateChecker {
     }
 
     /**
-     * 拉 GitHub `releases/latest`。
+     * 拉 GitHub `releases`（列表，发布时间倒序，含预发布）。
      *
-     * `releases/latest` 天然排除草稿和预发布，所以只有打正式 Release 才会触发提示。
+     * 从前往后取**第一个版本号能解析成 v?x.y.z 的**（跳过草稿和 tag 不规范的旧 Release）。
+     * 走列表而不是 `releases/latest`，是因为后者会把标了「测试版 / pre-release」的版本
+     * 整个排除掉 —— v1.9.0 就是这么发的，用 latest 会查不到它。
+     *
      * 超时 [Constants.UPDATE_TIMEOUT_MS]；任何异常都吞掉返回 null。
      */
     suspend fun check(): UpdateInfo? = withContext(Dispatchers.IO) {
         runCatching {
-            val conn = URL(Constants.GITHUB_LATEST_API).openConnection() as HttpURLConnection
+            val conn = URL(Constants.GITHUB_RELEASES_API).openConnection() as HttpURLConnection
             try {
                 conn.connectTimeout = Constants.UPDATE_TIMEOUT_MS
                 conn.readTimeout = Constants.UPDATE_TIMEOUT_MS
@@ -72,10 +76,20 @@ object UpdateChecker {
                 val code = conn.responseCode
                 if (code != 200) return@runCatching null
                 val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-                val o = JSONObject(body)
+                val arr = JSONArray(body)
 
+                // 列表是倒序的，命中第一个版本号规范的就用它
+                var picked: JSONObject? = null
+                for (i in 0 until arr.length()) {
+                    val cand = arr.optJSONObject(i) ?: continue
+                    if (cand.optBoolean("draft", false)) continue
+                    val t = cand.str("tag_name")
+                    if (t.isBlank() || parseVersion(t) == null) continue
+                    picked = cand
+                    break
+                }
+                val o = picked ?: return@runCatching null
                 val tag = o.str("tag_name")
-                if (tag.isBlank()) return@runCatching null
 
                 // 找 .apk 资产（没有也不影响，页面里总有下载入口）
                 var apk = ""

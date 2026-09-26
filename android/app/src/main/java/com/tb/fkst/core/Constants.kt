@@ -254,13 +254,12 @@ object Constants {
 
     // ---------------------------------------------------------------- 更新检查
     //
-    // 版本号从 GitHub Releases 读：`/releases/latest` 只会返回最新的**正式版**
-    // （草稿和预发布自动排除），所以发版时记得别勾 pre-release，否则这里查不到。
+    // 版本号从 GitHub Releases 读：走 `/releases`（列表，按发布时间倒序），
+    // **不用** `/releases/latest` —— 后者会排除预发布，测试版就查不到了。
     // 换仓库只改下面 owner / repo 两行，URL 都是拼出来的。
     //
-    // ⚠️ 已知坑（2026-09-25 实测）：latest 取的是**最新发布的 Release**，跟 tag 名
-    // 规不规范没关系 —— 现有 Release 的 tag 叫 `qwq`。tag 解析不出 v?x.y.z 时
-    // 客户端会**静默跳过**，不会误报。之后发版把 tag 起成 `v1.7.0` 这种规范名，
+    // ⚠️ 已知坑：早期 Release 的 tag 叫 `qwq` / `awa`，解析不出 v?x.y.z 时
+    // 客户端会**静默跳过**，不会误报。发版把 tag 起成 `v1.9.0` 这种规范名，
     // 弹窗和「跳过此版本」才有的比。
 
     /** GitHub 账号 */
@@ -269,9 +268,15 @@ object Constants {
     /** 仓库名 */
     const val GITHUB_REPO = "FkstClient"
 
-    /** releases/latest 接口（JSON） */
-    const val GITHUB_LATEST_API =
-        "https://api.github.com/repos/TB-SYS-ASD/FkstClient/releases/latest"
+    /**
+     * releases 列表接口（JSON，按发布时间倒序）。
+     *
+     * ⚠️ 不用 `releases/latest`：那个接口会**排除预发布**，而 v1.9.0 是标了
+     * 「测试版（pre-release）」发的，用 latest 会直接查不到，更新检查等于失效。
+     * 列表接口草稿和预发布都返回，客户端自己挑第一个版本号能解析的。
+     */
+    const val GITHUB_RELEASES_API =
+        "https://api.github.com/repos/TB-SYS-ASD/FkstClient/releases?per_page=10"
 
     /** 浏览器打开的发布页 */
     const val GITHUB_RELEASES_PAGE =
