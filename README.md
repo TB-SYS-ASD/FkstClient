@@ -107,9 +107,9 @@ tools/                   逆向工具
 ├── probe_endpoint.py    端点探测（靠服务端「缺参提示」试参数）
 └── probe_paper_h5.py    试卷 H5 接口探测
 
-release/                 历史 APK 归档
+release/                 历史 APK 归档（v1.8.0 ~ v1.11.3）
+release-notes/           各版本发布说明（v1.5.0 ~ v1.12.0）
 API_RESEARCH.md          协议逆向完整记录（18 节）
-RELEASE_NOTES_*.md       各版本发布说明
 ```
 
 ## 协议参考
