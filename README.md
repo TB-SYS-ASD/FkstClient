@@ -37,7 +37,26 @@ gradlew assembleRelease
 **要点**：
 - 需要 JDK 17+ 与 Android SDK
 - `local.properties` 由 `build-apk.cmd` 自动生成（不入库）
-- 签名需自备 `android/app/dev.keystore`（不入库，**未提供则构建出的包无法覆盖安装**）
+
+### 签名
+
+`android/app/dev.keystore` 不入库（见 `.gitignore`），缺失时会回落到
+`~/.android/debug.keystore`。已发布的安装包**因此分成两套签名**：
+
+| 版本 | 签名证书 |
+|---|---|
+| v1.5.0 / v1.6.0 / v1.8.0 | `CN=FKST Client, O=TB-BOT` —— 原 `dev.keystore`，**已丢失** |
+| v1.9.0 ~ v1.12.0 | `CN=Android Debug` —— 当前 `~/.android/debug.keystore` |
+
+对安装的影响：
+
+- **本机构建出的包，能直接覆盖安装 v1.9.0 及以上**（同一套 debug 签名）
+- **无法覆盖 v1.8.0 及更早**，安装会报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，
+  必须先卸载旧版（**本机数据会一并清除**）
+
+> 若自备一份新的 `android/app/dev.keystore`，注意它与 v1.9.0+ 的 debug 签名
+> 也不一致 —— 换用后同样无法覆盖安装现有版本，等于再制造一次签名断点。
+> 想让后续版本保持可覆盖升级，就继续沿用回落的 debug 签名（即不要放 `dev.keystore`）。
 
 ## 功能
 
