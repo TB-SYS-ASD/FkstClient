@@ -383,9 +383,12 @@ class FkstClient(
                 "device_token" to account.str("deviceToken"),
                 "loginToken" to account.str("loginToken"),
                 "tokenSeed" to account.str("tokenSeed"),
+                "yexError" to "",
             )
         } catch (t: Throwable) {
             android.util.Log.w("FkstClient", "YEX 登录失败（实时练习不可用）: ${t.message}")
+            // 记下失败原因，实时练习页可以展示给用户看
+            updateDynamic("yexError" to (t.message ?: t.javaClass.simpleName))
         }
         return payload
     }

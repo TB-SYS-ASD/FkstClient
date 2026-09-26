@@ -6,12 +6,15 @@ import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,8 +48,9 @@ import com.tb.fkst.ui.components.EmptyBox
 @Composable
 fun PaperExerciseScreen(vm: AppViewModel, nav: NavHostController) {
     val paper = vm.currentPaper
-
-    val url = remember(paper) {
+    // 登录态变化时重建 URL（登录回来后 loginToken 可能已补上）
+    val loginTokenState = remember { mutableStateOf(vm.client.dynamicParams["loginToken"] ?: "") }
+    val url = remember(paper, loginTokenState.value) {
         paper?.let {
             H5Sign.buildPaperExerciseUrl(
                 loginToken = vm.client.dynamicParams["loginToken"] ?: "",
@@ -57,6 +61,10 @@ fun PaperExerciseScreen(vm: AppViewModel, nav: NavHostController) {
                 type = it.type,
             )
         }
+    }
+    // 每次进入前台/重组时刷新一次凭据状态，登录回来能自动重试
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        loginTokenState.value = vm.client.dynamicParams["loginToken"] ?: ""
     }
 
     Scaffold(
@@ -87,11 +95,27 @@ fun PaperExerciseScreen(vm: AppViewModel, nav: NavHostController) {
                 EmptyBox(
                     when {
                         paper == null -> "请先从试卷详情进入"
-                        // 旧版本（≤v1.10.0）登录的会话没有 loginToken，升级后不会自动补
-                        loggedIn -> "当前会话缺少实时练习凭据（旧版本登录所致），请退出后重新登录"
+                        // 旧版本（≤v1.10.0）或 v1.11.1 之前登录的会话没有 loginToken
+                        loggedIn -> "当前会话缺少实时练习凭据，请退出后重新登录"
                         else -> "需要先登录才能进入实时练习"
                     },
                 )
+                val yexError = vm.client.dynamicParams["yexError"]
+                if (loggedIn && !yexError.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "上次登录凭据获取失败：$yexError",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+                if (paper != null) {
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = { nav.navigate(com.tb.fkst.ui.Routes.LOGIN) }) {
+                        Text(if (loggedIn) "去重新登录" else "去登录")
+                    }
+                }
             }
             else -> ExerciseWebView(
                 url = url,
