@@ -692,6 +692,19 @@ object Api {
         return Paged(items, !r.boolOr("over"))
     }
 
+    /**
+     * 答题记录（GetRecordShuatiQuestion1）：分页，每页 10 条。
+     * 服务端 over 恒 False（记录可能 200+ 条），翻页终止靠「短页」判定（<10 条即到底）。
+     */
+    suspend fun recordQuestions(client: FkstClient, page: Int = 0): Paged<RecordQuestion> {
+        val r = client.request(
+            "GET_RECORD_SHUATI_QUESTION",
+            mapOf("page" to page.toString()),
+        )
+        val items = RecordQuestion.list(r)
+        return Paged(items, items.size >= 10)
+    }
+
     // ------------------------------------------------------------ 签到
 
     /** 金币 / 连续签到状态 */

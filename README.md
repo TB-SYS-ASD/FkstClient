@@ -61,10 +61,10 @@ python main.py
 支持莫奈动态取色），位于 [`android/`](android/) 目录，详见
 [android/README.md](android/README.md)。
 
-已构建好的安装包（v1.10.0 在 GitHub 上标的是**测试版 / pre-release**）：
-- `release/FkstClient-v1.10.0-release.apk`
+已构建好的安装包（v1.11.0 在 GitHub 上标的是**测试版 / pre-release**）：
+- `release/FkstClient-v1.11.0-release.apk`
 
-> 上一版 v1.9.0（同样为测试版）同目录保留：`release/FkstClient-v1.9.0-release.apk`。
+> 上一版 v1.10.0（同样为测试版）同目录保留：`release/FkstClient-v1.10.0-release.apk`。
 
 构建方式（Windows 双击即可）：
 ```bash
@@ -73,6 +73,8 @@ android\build-apk.cmd
 
 主要能力：**试卷库（底部导航第一位：按年级 / 教材版本浏览真实试卷、搜试卷、收藏，
 点进去看题目 + 答案 + 解析）**、
+**H5 实时练习（试卷详情页 ▶ 按钮，用本账号合法会话拼官方 paperExercises-v18 页面，
+内置浏览器里真能答题 / 交卷）**、**我的答题记录（回看做过的题）**、
 **首次启动引导（用户政策 + 为什么没有刷题模块的说明，只出现一次）**、
 **更新检查（GitHub Releases，启动静默 + 设置页手动）**、登录、发现流（11 个分区 + 关注流二级切换）、搜索、
 **发布笔记（标题 + 正文 + 最多 9 张配图 + 最多 3 段音频 + 分区）**、

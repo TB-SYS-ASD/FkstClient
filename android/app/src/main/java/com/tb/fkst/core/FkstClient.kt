@@ -365,6 +365,10 @@ class FkstClient(
             "openid" to payload.str("openid"),
             "mid" to payload.str("mid"),
             "device_token" to payload.str("device_token"),
+            // H5 实时答题（paperExercises-v18）签名种子要用 loginToken 原文；
+            // tokenSeed 同样要带进 H5 query。login() 漏抓这两个会导致只能看题、不能跳官方 H5 练习。
+            "loginToken" to payload.str("loginToken"),
+            "tokenSeed" to payload.str("tokenSeed"),
         )
         return payload
     }

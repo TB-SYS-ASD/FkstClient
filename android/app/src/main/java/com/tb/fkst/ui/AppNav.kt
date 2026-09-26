@@ -58,8 +58,10 @@ import com.tb.fkst.ui.screens.NoticesScreen
 import com.tb.fkst.ui.screens.OnboardingScreen
 import com.tb.fkst.ui.screens.PaperCollectionScreen
 import com.tb.fkst.ui.screens.PaperDetailScreen
+import com.tb.fkst.ui.screens.PaperExerciseScreen
 import com.tb.fkst.ui.screens.PaperLibraryScreen
 import com.tb.fkst.ui.screens.PublishNoteScreen
+import com.tb.fkst.ui.screens.RecordScreen
 import com.tb.fkst.ui.screens.SearchScreen
 import com.tb.fkst.ui.screens.SettingsScreen
 import com.tb.fkst.ui.screens.SocialScreen
@@ -85,6 +87,8 @@ object Routes {
     const val EDIT_NOTE = "edit_note"
     const val PAPER_DETAIL = "paper_detail"
     const val PAPER_COLLECTION = "paper_collection"
+    const val EXERCISE = "exercise"
+    const val RECORDS = "records"
 }
 
 @Composable
@@ -212,6 +216,12 @@ fun AppNavHost(vm: AppViewModel) {
         composable(Routes.PAPER_DETAIL) { PaperDetailScreen(vm, nav) }
 
         composable(Routes.PAPER_COLLECTION) { PaperCollectionScreen(vm, nav) }
+
+        // H5 实时答题：把官方 paperExercises-v18 页面丢进 WebView，真能做题/交卷
+        composable(Routes.EXERCISE) { PaperExerciseScreen(vm, nav) }
+
+        // 我的答题记录（GetRecordShuatiQuestion1）
+        composable(Routes.RECORDS) { RecordScreen(vm, nav) }
     }
 }
 

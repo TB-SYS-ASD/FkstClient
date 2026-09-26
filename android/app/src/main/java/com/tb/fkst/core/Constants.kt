@@ -603,5 +603,14 @@ object Endpoints {
             required = listOf("keyword", "page"),
             defaults = mapOf("page" to "0", "ct" to "20"),
         ),
+
+        // ---------------- 答题记录 ----------------
+        // GetRecordShuatiQuestion1：返回 questions[]（题干 + 选项），force 签名。
+        // 实测 res=0；over/isend 恒 False（记录可能 200+ 条），翻页靠短页判定（<10 条停）。
+        "GET_RECORD_SHUATI_QUESTION" to Endpoint(
+            path = "GetRecordShuatiQuestion1",
+            required = listOf("page"),
+            defaults = mapOf("page" to "0"),
+        ),
     )
 }

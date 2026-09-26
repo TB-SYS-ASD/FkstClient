@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MarkChatUnread
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
@@ -270,6 +271,14 @@ fun MeScreen(vm: AppViewModel, nav: NavHostController) {
                     title = "消息通知",
                     subtitle = stats?.let { if (it.unread > 0) "${it.unread} 条未读" else null },
                     onClick = { nav.navigate(Routes.NOTICES) },
+                    trailing = { Icon(Icons.Filled.ChevronRight, null) },
+                )
+                HorizontalDivider(Modifier.padding(start = 54.dp))
+                SettingRow(
+                    icon = Icons.Filled.History,
+                    title = "答题记录",
+                    subtitle = "回看做过的题",
+                    onClick = { nav.navigate(Routes.RECORDS) },
                     trailing = { Icon(Icons.Filled.ChevronRight, null) },
                 )
                 HorizontalDivider(Modifier.padding(start = 54.dp))

@@ -24,6 +24,7 @@ import com.tb.fkst.data.Notice
 import com.tb.fkst.data.Paged
 import com.tb.fkst.data.Paper
 import com.tb.fkst.data.PaperDetail
+import com.tb.fkst.data.RecordQuestion
 import com.tb.fkst.data.PaperVersion
 import com.tb.fkst.data.PendingAudio
 import com.tb.fkst.data.PendingImage
@@ -1078,6 +1079,24 @@ class AppViewModel(val repo: Repository) : ViewModel() {
                     paperDetailLoading = false
                     paperDetailError = friendlyError(it)
                 }
+        }
+    }
+
+    // ------------------------------------------------------------ 答题记录
+
+    /** 我的答题记录（GetRecordShuatiQuestion1），翻页查看器用 */
+    var recordFeed by mutableStateOf(FeedState<RecordQuestion>())
+        private set
+
+    fun loadRecords(reset: Boolean = false) {
+        if (!loggedIn) {
+            recordFeed = FeedState(loaded = true, error = "请先登录")
+            return
+        }
+        viewModelScope.launch {
+            loadInto(recordFeed, { recordFeed = it }, reset) { page ->
+                Api.recordQuestions(client, page)
+            }
         }
     }
 

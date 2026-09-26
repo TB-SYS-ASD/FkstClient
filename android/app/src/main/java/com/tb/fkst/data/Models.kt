@@ -1053,6 +1053,63 @@ data class PaperDetail(
     }
 }
 
+/**
+ * 答题记录里的一道题（GetRecordShuatiQuestion1 → questions[]）。
+ *
+ * 只返回题干 + 选项（选项可能是 JSON 对象串 `{"A":"…","B":"…"}` 或纯文本），
+ * 不含正确答案；想看对错可再配合 GetZJPaperById5，这里先把记录展示出来。
+ */
+data class RecordQuestion(
+    val id: String,
+    val linkId: String,
+    val questionText: String,
+    val options: String,
+    val subject: String,
+    val fromPtype: String,
+    val fromPid: String,
+    val hasSublist: Boolean,
+) {
+    companion object {
+        fun from(o: JSONObject): RecordQuestion {
+            val raw = o.str("options")
+            val sublist = o.opt("sublist")
+            return RecordQuestion(
+                id = o.str("id"),
+                linkId = o.str("link_id"),
+                questionText = paperText(o.str("question_text")),
+                options = renderOptions(raw),
+                subject = o.str("subject"),
+                fromPtype = o.str("from_ptype"),
+                fromPid = o.str("from_pid"),
+                hasSublist = sublist is org.json.JSONArray && sublist.length() > 0,
+            )
+        }
+
+        /** options 可能是 JSON 对象串；解析成「A. xx」逐行，失败则原样返回 */
+        private fun renderOptions(raw: String): String {
+            val r = raw.trim()
+            if (r.isEmpty()) return ""
+            runCatching {
+                val obj = org.json.JSONObject(r)
+                val sb = StringBuilder()
+                for (k in obj.keys().asSequence()) {
+                    if (sb.isNotEmpty()) sb.append("\n")
+                    sb.append(k).append(". ").append(obj.getString(k))
+                }
+                if (sb.isNotEmpty()) return paperText(sb.toString())
+            }
+            return paperText(r)
+        }
+
+        fun list(o: JSONObject): List<RecordQuestion> {
+            val arr = o.optJSONArray("questions") ?: return emptyList()
+            return (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.let { runCatching { from(it) }.getOrNull() }
+            }
+        }
+    }
+}
+
 /** 教材版本（GetSTFilterData 的 filters[]） */
 data class PaperVersion(
     val id: String,

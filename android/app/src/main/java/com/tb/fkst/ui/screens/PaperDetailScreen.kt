@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.tb.fkst.data.PaperDetail
+import com.tb.fkst.ui.Routes
 import com.tb.fkst.data.PaperQuestion
 import com.tb.fkst.ui.AppViewModel
 import com.tb.fkst.ui.components.EmptyBox
@@ -69,6 +71,17 @@ fun PaperDetailScreen(vm: AppViewModel, nav: NavHostController) {
                 },
                 actions = {
                     if (paper != null) {
+                        IconButton(
+                            onClick = { nav.navigate(Routes.EXERCISE) },
+                            enabled = vm.loggedIn,
+                        ) {
+                            Icon(
+                                Icons.Filled.PlayArrow,
+                                contentDescription = "实时练习",
+                                tint = if (vm.loggedIn) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         IconButton(onClick = { vm.togglePaperCollection(paper) }) {
                             Icon(
                                 imageVector = Icons.Filled.Star,
@@ -167,8 +180,8 @@ private fun PaperDetailBody(
 
         item {
             Text(
-                text = "题目、答案与解析来自服务端试卷接口；在线答题页是官方 H5，" +
-                    "对我们这类第三方客户端一律返回「非法访问」，所以这里只能看题、不能提交答题记录。",
+                text = "本页只做看题与对答案。想真正答题、交卷，点右上角 ▶ 进入官方 H5 实时练习" +
+                    "（带本账号合法会话，能正常提交作答）。答题记录可在「我的 → 答题记录」里回看。",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),

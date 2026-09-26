@@ -43,6 +43,8 @@ class Repository(private val appContext: Context) {
                 "unionid" to (prefs.getString("unionid", "") ?: ""),
                 "openid" to (prefs.getString("openid", "") ?: ""),
                 "device_token" to (prefs.getString("device_token", "") ?: ""),
+                "loginToken" to (prefs.getString("loginToken", "") ?: ""),
+                "tokenSeed" to (prefs.getString("tokenSeed", "") ?: ""),
             )
         )
         return true
@@ -54,6 +56,8 @@ class Repository(private val appContext: Context) {
             .putString("unionid", client.dynamicParams["unionid"])
             .putString("openid", client.dynamicParams["openid"])
             .putString("device_token", client.dynamicParams["device_token"])
+            .putString("loginToken", client.dynamicParams["loginToken"])
+            .putString("tokenSeed", client.dynamicParams["tokenSeed"])
             .apply()
     }
 
@@ -61,6 +65,7 @@ class Repository(private val appContext: Context) {
         client.clearSession()
         prefs.edit()
             .remove("mid").remove("unionid").remove("openid").remove("device_token")
+            .remove("loginToken").remove("tokenSeed")
             .apply()
     }
 
