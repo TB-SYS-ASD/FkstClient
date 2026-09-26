@@ -531,6 +531,145 @@ object Api {
         }
     }
 
+    // ------------------------------------------------------------ 试卷库
+
+    /**
+     * 试卷列表（GetShuatiPaper5）。
+     *
+     * 实测（2026-09-26）：只有 `f_gradeid`（年级）和 `version_id`（教材版本）会生效，
+     * 而且 `version_id` 必须跟 `f_gradeid` 一起传 —— 单独传会返回 0 条。
+     * `subject` / `xd` / `papertype` 传了也是被忽略。
+     *
+     * ⚠️ 响应里**没有 `res` 字段**（只有 `papers[]` / `answers[]`），
+     * 所以这里必须 `expectRes = false`，否则会被当成 res=-1 抛异常。
+     *
+     * 「还有没有下一页」靠 `over` 字段，跟社区那几个列表接口一个套路。
+     */
+    suspend fun papers(
+        client: FkstClient,
+        page: Int = 0,
+        fGradeId: String = "",
+        versionId: String = "",
+    ): Paged<Paper> {
+        val p = LinkedHashMap<String, String>()
+        p["page"] = page.toString()
+        if (fGradeId.isNotBlank()) p["f_gradeid"] = fGradeId
+        if (versionId.isNotBlank()) p["version_id"] = versionId
+        val r = client.request("GET_PAPERS", p, expectRes = false)
+        return Paged(Paper.list(r), !r.boolOr("over"))
+    }
+
+    /**
+     * 试卷详情（GetZJPaperById5）：pid + type + aid + paperid。
+     *
+     * `pid` 和 `paperid` 都填试卷 id，`type` 填试卷自带的 type，`aid` 固定 0。
+     * **只有 type=1（同步卷）拿得到题目**，其它 type 服务端回 res=1，
+     * 上层会退化成「只看元信息」。响应同样没有 res 字段。
+     */
+    suspend fun paperDetail(client: FkstClient, paper: Paper): PaperDetail? {
+        val r = client.request(
+            "GET_PAPER_DETAIL",
+            mapOf(
+                "pid" to paper.id,
+                "paperid" to paper.id,
+                "type" to paper.type,
+                "aid" to "0",
+            ),
+            expectRes = false,
+        )
+        return PaperDetail.from(r)
+    }
+
+    /** 教材版本列表（GetSTFilterData：filter=1 + subject + f_gradeid） */
+    suspend fun paperVersions(
+        client: FkstClient,
+        subject: String,
+        fGradeId: String,
+    ): List<PaperVersion> {
+        if (fGradeId.isBlank() || subject.isBlank()) return emptyList()
+        val r = client.request(
+            "GET_PAPER_VERSIONS",
+            mapOf("subject" to subject, "f_gradeid" to fGradeId),
+        )
+        return PaperVersion.list(r)
+    }
+
+    /**
+     * 收藏 / 取消收藏试卷（CollectShuatiPaper：status + type + pid）。
+     *
+     * 跟笔记收藏那条 CollectShuatiNote 同款，也是从官方端 dex 里挖出来的。
+     * 首次实测可逆：status=1 收藏 pid=80446 → 收藏列表出现；status=0 → 消失。
+     *
+     * ⚠️ 两个坑：
+     * 1. 它**恒回 res=0**，连不存在的 pid 也是 0，所以没法用返回值判断成败；
+     * 2. 复测时遇到过「返回 0 但收藏列表里查不到」（同一时段笔记收藏列表、
+     *    赞过列表也一起 res=1，像是服务端侧抖动）。
+     *
+     * 所以上层只能**乐观更新**本地的已收藏集合，不要拿它当可靠的云端存储。
+     */
+    suspend fun collectPaper(client: FkstClient, paper: Paper, on: Boolean): JSONObject =
+        client.request(
+            "COLLECT_PAPER",
+            mapOf(
+                "status" to if (on) "1" else "0",
+                "type" to paper.type,
+                "pid" to paper.id,
+            ),
+            expectRes = false,
+        )
+
+    /**
+     * 我收藏的试卷（GetCollectionShuatiPaper5）。
+     *
+     * `type` 有白名单：0 / 1 / 2 / 12 有效，其它值（比如考研卷的 22）回 res=1，
+     * 所以这里固定查同步卷 [Constants.PAPER_COLLECT_TYPE]。
+     */
+    suspend fun paperCollections(client: FkstClient, page: Int = 0): Paged<Paper> {
+        val r = client.request(
+            "GET_PAPER_COLLECTIONS",
+            mapOf("type" to Constants.PAPER_COLLECT_TYPE, "page" to page.toString()),
+        )
+        return Paged(Paper.list(r), !r.boolOr("over"))
+    }
+
+    /**
+     * 搜试卷（GetSearchPapers7，**comment 签名变体**）。
+     *
+     * 返回 `matches[]`，字段是 `pid` / `topic_title` / `logo` / `type`，
+     * 跟列表接口的 `papers[]` 不一样，所以这里先转成 [Paper] 再交给 UI。
+     * 搜出来的卷子 type 大多是 22（考研）/ 14（专升本）这类，**看不了题目**，
+     * 列表里照样展示，点进去会提示不支持在线查看。
+     */
+    suspend fun searchPapers(client: FkstClient, keyword: String, page: Int = 0): Paged<Paper> {
+        val r = client.request(
+            "SEARCH_PAPERS",
+            mapOf("keyword" to keyword, "page" to page.toString(), "ct" to "20"),
+            expectRes = false,
+        )
+        val arr = r.optJSONArray("matches") ?: return Paged(emptyList(), false)
+        val items = (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { o ->
+                Paper(
+                    id = o.str("pid"),
+                    title = o.str("topic_title"),
+                    subject = "",
+                    xd = "",
+                    fGradeId = "",
+                    versionId = "",
+                    logo = o.str("logo"),
+                    littleTitle = o.str("tag1"),
+                    questionNum = 0,
+                    lookNum = 0,
+                    useNum = 0,
+                    isAnswer = false,
+                    type = o.str("type"),
+                    createdAt = 0L,
+                )
+            }
+        }.filter { it.id.isNotBlank() }
+        return Paged(items, !r.boolOr("over"))
+    }
+
     // ------------------------------------------------------------ 签到
 
     /** 金币 / 连续签到状态 */

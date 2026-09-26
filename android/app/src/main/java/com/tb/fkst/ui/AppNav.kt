@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Person
@@ -55,6 +56,9 @@ import com.tb.fkst.ui.screens.NoteDetailScreen
 import com.tb.fkst.ui.screens.NoteListScreen
 import com.tb.fkst.ui.screens.NoticesScreen
 import com.tb.fkst.ui.screens.OnboardingScreen
+import com.tb.fkst.ui.screens.PaperCollectionScreen
+import com.tb.fkst.ui.screens.PaperDetailScreen
+import com.tb.fkst.ui.screens.PaperLibraryScreen
 import com.tb.fkst.ui.screens.PublishNoteScreen
 import com.tb.fkst.ui.screens.SearchScreen
 import com.tb.fkst.ui.screens.SettingsScreen
@@ -79,6 +83,8 @@ object Routes {
     const val VIEWER = "viewer"
     const val PUBLISH = "publish"
     const val EDIT_NOTE = "edit_note"
+    const val PAPER_DETAIL = "paper_detail"
+    const val PAPER_COLLECTION = "paper_collection"
 }
 
 @Composable
@@ -201,6 +207,11 @@ fun AppNavHost(vm: AppViewModel) {
 
         // 编辑已发笔记的配图（只能改图，标题正文服务端没开放）
         composable(Routes.EDIT_NOTE) { EditNoteScreen(vm, nav) }
+
+        // 试卷详情（题目 + 答案 + 解析）
+        composable(Routes.PAPER_DETAIL) { PaperDetailScreen(vm, nav) }
+
+        composable(Routes.PAPER_COLLECTION) { PaperCollectionScreen(vm, nav) }
     }
 }
 
@@ -223,10 +234,14 @@ fun SplashScreen() {
 private data class Tab(val label: String, val icon: ImageVector)
 
 /**
- * 底部导航四项：发现 / 搜索 / 私信 / 我的。
+ * 底部导航五项：试卷 / 发现 / 搜索 / 私信 / 我的。
+ *
+ * 「试卷」是 1.9.0 新增的试卷库（取代做不了的官方 H5 在线答题）：
+ * 能按年级、教材版本浏览真实试卷，能搜、能收藏，点进去能看题目 + 答案 + 解析。
  * 「关注」流已经并进发现页的二级切换里，不再单独占一个 tab。
  */
 private val TABS = listOf(
+    Tab("试卷", Icons.AutoMirrored.Filled.MenuBook),
     Tab("发现", Icons.Filled.Explore),
     Tab("搜索", Icons.Filled.Search),
     Tab("私信", Icons.Filled.Forum),
@@ -253,9 +268,10 @@ fun MainScreen(vm: AppViewModel, nav: NavHostController) {
     ) { padding ->
         Box(Modifier.padding(bottom = padding.calculateBottomPadding())) {
             when (tab) {
-                0 -> DiscoverScreen(vm, nav)
-                1 -> SearchScreen(vm, nav)
-                2 -> LetterListScreen(vm, nav, embedded = true)
+                0 -> PaperLibraryScreen(vm, nav)
+                1 -> DiscoverScreen(vm, nav)
+                2 -> SearchScreen(vm, nav)
+                3 -> LetterListScreen(vm, nav, embedded = true)
                 else -> MeScreen(vm, nav)
             }
         }

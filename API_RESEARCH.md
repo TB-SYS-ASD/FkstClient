@@ -1038,3 +1038,98 @@ dex 里一共 6 个刷题 H5 页面：
 - `UpdateUploadPaperUrls` / `UpdateUploadPaperStatus` 也有（改试卷图 / 状态），
   跟笔记那两个是一对，但试卷侧本来就取不到题，没接。
 - 官方自己的协议页在 `/yex/privacyPolicy?app=fkst`，做用户政策页时参考过。
+
+---
+
+## 十八、试卷库（2026-09-26 实测，v1.9.0 新增「试卷」板块）
+
+上一节的结论是「刷题做不了」：H5 答题页恒回「非法访问-1」，
+`GetZJQuestionByID2` 对所有真实 qid 都 500。于是改做**试卷库**——
+不做在线答题，做「浏览 / 筛选 / 收藏真实试卷 + 把题目答案和解析读出来」。
+
+调研时翻盘了两条旧结论：
+
+1. **`GetZJPaperById5` 不是瞎猜的接口名**，它确实存在而且能返回整份卷子的题目。
+   之前只传了 `pid` 一个参数，被缺参提示（`type` → `aid` → `paperid`）挡住就判定不可用；
+   补齐四个参数后直接拿到了 `questionlist`。
+2. 官方端的 `SimplePaperFragment` 用一个 `M_TYPE` 在 9 个列表接口之间切换
+   （`GetShuatiPaper5` / `GetBKShuatiPaper4` / `GetZGKShuatiPaper2` / `GetXKShuatiPaper` /
+   `GetDXShuatiPapers` / `GetCollegeShuatiPapers` / `GetEng46ShuatiPapers` /
+   `GetAcademyPapers2` / `GetSTVocationPapers2`），
+   也就是**不同学段 / 模块是不同接口**。客户端只接了第一个（中小学同步卷）。
+
+### 18.1 接口与参数
+
+| 用途 | 接口 | 参数 | 备注 |
+|------|------|------|------|
+| 试卷列表 | `GetShuatiPaper5` | `page`、`f_gradeid`、`version_id` | 响应**没有 `res` 字段** |
+| 试卷详情 | `GetZJPaperById5` | `pid` + `paperid`(同 pid) + `type` + `aid=0` | 返回 `paper.questionlist[]` |
+| 教材版本 | `GetSTFilterData` | `filter=1` + `subject` + `f_gradeid` | `filters[]` → version / version_id |
+| 收藏试卷 | `CollectShuatiPaper` | `status`(1/0) + `type` + `pid` | 真落库（可逆验证过） |
+| 我的收藏 | `GetCollectionShuatiPaper5` | `type`、`page` | type 白名单 0/1/2/12，22 回 res=1 |
+| 搜试卷 | `GetSearchPapers7` | `keyword`、`page`、`ct` | **comment 签名变体**，返回 `matches[]` |
+
+`GetShuatiPaper5` 的筛选实测：
+
+- `f_gradeid`（年级）**生效** —— 传 7 就全是四年级的卷子
+- `version_id`（教材版本）**要跟 `f_gradeid` 一起传**才生效，单独传恒回 0 条
+- `subject` / `xd` / `papertype` / `province_id` / `year` 单传**一律被忽略**
+  （传了返回跟没传一样）
+
+### 18.2 题目结构
+
+`GetZJPaperById5` 返回 `paper.questionlist[]`，每一项是一个大题：
+
+```
+questionlist[i] = { "qtype": "完形填空", "score": 0, "question": [ {...}, ... ] }
+
+question[j] = {
+  "id", "question_text",      // 题干（HTML）
+  "options",                  // 选项，多数卷子为空串
+  "answer_text",              // 答案（HTML）
+  "explanation_text",         // 解析（HTML，部分卷子很长）
+  "channel_type_name", "is_multiple_choice", "list", "sublist", … }
+```
+
+抽查 6 份卷子都能拿到题（6~40 题 / 3~10 个大题），字段稳定。
+三个文本字段都是富文本（`<p>`、`<br />`、`&rsquo;`、`&nbsp;`），
+客户端先解实体再剥标签（见 `paperText()`）。
+
+### 18.2.1 收藏接口的两个坑
+
+`CollectShuatiPaper`（status + type + pid）：
+
+1. **恒回 `res=0`** —— 拿不存在的 pid 去收藏也是 0，所以没法用返回值判断成败；
+2. **写入不一定落库** —— 首次实测可逆（收藏 pid=80446 → 收藏列表出现该条，
+   `link_id=3458571`；取消 → 消失），但当天晚些时候复测，同样的调用
+   返回 0 但列表里查不到，而且换 type（0/1/2/12）、换 pid 都一样。
+   同一时段 `GetCollectionShuatiNote1`（笔记收藏列表）与 `GetLikeShuatiNote`（赞过列表）
+   也一起 `res=1`，而读接口（`GetShuatiPaper5`、`GetSTMyData5`）正常，
+   所以判断是**服务端侧抖动 / 高频调用被限**，不是参数错了。
+
+结论：客户端按**乐观更新**处理（点了就改本地集合），并且进页面时拉一次收藏列表校正。
+别把它当可靠的云端存储。
+
+### 18.3 只能看同步卷
+
+`type` 决定能不能拿到题目：
+
+- `type=1`（中小学同步卷）→ 正常返回题目
+- `type=22`（考研）/ `14`（专升本）/ `1111`、`1112`、`1023`（教资等）→ `{"res":1}`
+- 不存在的 id → `questionlist: null`（有校验，不是无脑成功）
+
+`GetSearchPapers7` 搜出来的大多是后几种，所以搜索结果点进去会提示
+「暂不支持在线查看题目」。同理，收藏列表固定查 `type=1`。
+
+### 18.4 仍然做不到的
+
+- **在线答题 / 交卷**：题目能读，但没有提交答题记录的可用接口
+  （`GetRecordShuatiQuestion1` / `UpdateSTPaperAnswer` 未验证，且答题页本身进不去）
+- **看非同步卷的题目**（见 18.3）
+- **下载 PDF**：`GetSTPaperPdfUrl` 要 `did`，试过试卷 id 与收藏的 link_id 都是 `res=2`，
+  `did` 的含义没查出来
+- **试卷的标题/正文编辑**：只有 `UpdateUploadPaperUrls` / `UpdateUploadPaperStatus`，
+  跟笔记那边一样属于「改不了正文」
+
+年级（`f_gradeid`）映射是实测校准的：拿每个值拉一页，按返回卷子的标题反推。
+`17`、`25`、`27` 这几个返回的卷子年级跟编号对不上，没有放进筛选表。

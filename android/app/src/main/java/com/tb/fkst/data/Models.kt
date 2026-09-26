@@ -846,3 +846,165 @@ data class CoinState(
         }
     }
 }
+
+// ------------------------------------------------------------------ 试卷库
+//
+// 字段来自 GetShuatiPaper5（列表）/ GetCollectionShuatiPaper5（收藏）返回的 papers[]，
+// 与 GetZJPaperById5（详情）返回的 paper 对象，两套字段名基本重合。
+
+/**
+ * 试卷。
+ *
+ * `type` 决定能不能点进去看题：**只有 1（同步卷）能拿到题目**，
+ * 其它 type（考研 22 / 专升本 14 / 教资 1111…）服务端一律回 res=1，
+ * 这些卷子列表里照常显示，点进去只给元信息 + 一句「暂不支持在线查看」。
+ */
+data class Paper(
+    val id: String,
+    val title: String,
+    val subject: String,
+    val xd: String,
+    val fGradeId: String,
+    val versionId: String,
+    val logo: String,
+    val littleTitle: String,
+    val questionNum: Int,
+    val lookNum: Int,
+    val useNum: Int,
+    val isAnswer: Boolean,
+    val type: String,
+    val createdAt: Long,
+) {
+    /** 列表副标题：类型 + 题量，例如「同步测试卷 · 40 题」 */
+    val subtitle: String
+        get() = buildString {
+            if (littleTitle.isNotBlank()) append(littleTitle)
+            if (questionNum > 0) {
+                if (isNotEmpty()) append(" · ")
+                append(questionNum).append(" 题")
+            }
+        }.ifBlank { if (isAnswer) "含答案" else "试卷" }
+
+    /** 只有同步卷（type=1）能在线看题 */
+    val canOpen: Boolean get() = type == "1"
+
+    companion object {
+        fun from(o: JSONObject): Paper = Paper(
+            id = o.str("id"),
+            title = o.str("topic_title").ifBlank { o.str("title") },
+            subject = o.str("subject"),
+            xd = o.str("xd"),
+            fGradeId = o.str("f_gradeid"),
+            versionId = o.str("version_id"),
+            logo = o.str("logo"),
+            littleTitle = o.str("little_title"),
+            questionNum = o.intOr("question_num"),
+            lookNum = o.intOr("look_num"),
+            useNum = o.intOr("use_num"),
+            isAnswer = o.boolOr("is_answer"),
+            type = o.str("type").ifBlank { "1" },
+            createdAt = o.longOr("created_at"),
+        )
+
+        fun list(o: JSONObject): List<Paper> {
+            val arr = o.optJSONArray("papers") ?: return emptyList()
+            return (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.let { runCatching { from(it) }.getOrNull() }
+            }.filter { it.id.isNotBlank() }
+        }
+    }
+}
+
+/** 一道题。题干/答案/解析在服务端都是 HTML，展示前统一过一遍 [paperText]。 */
+data class PaperQuestion(
+    val id: String,
+    val type: String,
+    val stem: String,
+    val options: String,
+    val answer: String,
+    val explanation: String,
+    val isMultiple: Boolean,
+)
+
+/** 一个大題（如「完形填空」）及其下面的小题 */
+data class PaperGroup(
+    val qtype: String,
+    val questions: List<PaperQuestion>,
+)
+
+/** 试卷详情：元信息 + 分组题目 */
+data class PaperDetail(
+    val paper: Paper,
+    val groups: List<PaperGroup>,
+) {
+    val questionCount: Int get() = groups.sumOf { it.questions.size }
+
+    companion object {
+        fun from(o: JSONObject): PaperDetail? {
+            val p = o.optJSONObject("paper") ?: return null
+            val groups = (p.optJSONArray("questionlist") ?: JSONArray()).let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    val g = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val qs = (g.optJSONArray("question") ?: JSONArray()).let { qa ->
+                        (0 until qa.length()).mapNotNull { j ->
+                            qa.optJSONObject(j)?.let { q ->
+                                PaperQuestion(
+                                    id = q.str("id"),
+                                    type = q.str("channel_type_name"),
+                                    stem = paperText(q.str("question_text")),
+                                    options = paperText(q.str("options")),
+                                    answer = paperText(q.str("answer_text")),
+                                    explanation = paperText(q.str("explanation_text")),
+                                    isMultiple = q.boolOr("is_multiple_choice"),
+                                )
+                            }
+                        }
+                    }
+                    if (qs.isEmpty()) null
+                    else PaperGroup(qtype = g.str("qtype").ifBlank { "题目" }, questions = qs)
+                }
+            }
+            return PaperDetail(paper = Paper.from(p), groups = groups)
+        }
+    }
+}
+
+/** 教材版本（GetSTFilterData 的 filters[]） */
+data class PaperVersion(
+    val id: String,
+    val name: String,
+) {
+    companion object {
+        fun list(o: JSONObject): List<PaperVersion> {
+            val arr = o.optJSONArray("filters") ?: return emptyList()
+            return (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.let { v ->
+                    val id = v.str("version_id")
+                    val name = v.str("version")
+                    if (id.isBlank() || name.isBlank()) null else PaperVersion(id, name)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 题干 / 答案 / 解析的归一化：先解 HTML 实体，再去标签。
+ *
+ * 服务端这些字段是富文本（`<p>`、`<br />`、`&rsquo;`、`&nbsp;`），
+ * 直接显示会带一堆标签和转义符。
+ */
+private val HTML_ENTITIES = listOf(
+    "&nbsp;" to " ", "&amp;" to "&", "&lt;" to "<", "&gt;" to ">",
+    "&quot;" to "\"", "&#39;" to "'", "&rsquo;" to "’", "&lsquo;" to "‘",
+    "&ldquo;" to "“", "&rdquo;" to "”", "&hellip;" to "…", "&mdash;" to "—",
+    "&ndash;" to "–", "&times;" to "×", "&divide;" to "÷", "&deg;" to "°",
+)
+
+fun paperText(raw: String?): String {
+    if (raw.isNullOrBlank() || raw == "null") return ""
+    var t: String = raw
+    // 这里不能用 forEach：lambda 捕获的 var 会让编译器报 smart cast 失败
+    for ((e, c) in HTML_ENTITIES) t = t.replace(e, c)
+    return com.tb.fkst.core.Crypto.stripTags(t)
+}

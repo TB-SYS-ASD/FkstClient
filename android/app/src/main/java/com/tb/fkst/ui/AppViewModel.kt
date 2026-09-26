@@ -22,6 +22,9 @@ import com.tb.fkst.data.Letter
 import com.tb.fkst.data.Note
 import com.tb.fkst.data.Notice
 import com.tb.fkst.data.Paged
+import com.tb.fkst.data.Paper
+import com.tb.fkst.data.PaperDetail
+import com.tb.fkst.data.PaperVersion
 import com.tb.fkst.data.PendingAudio
 import com.tb.fkst.data.PendingImage
 import com.tb.fkst.data.Repository
@@ -877,6 +880,178 @@ class AppViewModel(val repo: Repository) : ViewModel() {
             loadInto(noticesFeed, { noticesFeed = it }, reset) { page ->
                 Api.notices(client, "2", page)
             }
+        }
+    }
+
+    // ------------------------------------------------------------ 试卷库
+    //
+    // 官方的在线答题（H5 `questionExercise-v17` / `paperExercises-v18` / `simpleUsePaper`）
+    // 一直被门禁挡着（恒回「非法访问-1」），所以这里做的是**试卷库**：
+    // 浏览 / 筛选 / 收藏真实试卷，并且**直接把题目、答案、解析读出来**看
+    // （GetZJPaperById5，只对 type=1 的同步卷有效）。
+    // 不能提交答题记录（没有可用接口），所以定位是「查卷子 + 看题看解析」。
+
+    /** 当前年级筛选项（PAPER_GRADES 里的第一项是「最新」，即不筛选） */
+    var paperGrade by mutableStateOf(Constants.PAPER_GRADES.first())
+        private set
+
+    /** 当前教材版本（空 = 不限）。可选值随年级变化，见 [paperVersions] */
+    var paperVersionId by mutableStateOf("")
+        private set
+
+    var paperVersions by mutableStateOf<List<PaperVersion>>(emptyList())
+        private set
+
+    var paperFeed by mutableStateOf(FeedState<Paper>())
+        private set
+
+    /** 试卷库的搜索结果（keyword 为空时不用它） */
+    var paperSearchKeyword by mutableStateOf("")
+        private set
+
+    var paperSearchFeed by mutableStateOf(FeedState<Paper>())
+        private set
+
+    /** 我收藏的试卷 */
+    var paperCollectionFeed by mutableStateOf(FeedState<Paper>())
+        private set
+
+    /** 已收藏的试卷 id（本地维护；接口对不存在的 pid 也回 res=0，只能乐观更新） */
+    var collectedPaperIds by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /** 详情页当前这份卷子 */
+    var currentPaper by mutableStateOf<Paper?>(null)
+        private set
+
+    var paperDetail by mutableStateOf<PaperDetail?>(null)
+        private set
+
+    var paperDetailLoading by mutableStateOf(false)
+        private set
+
+    var paperDetailError by mutableStateOf<String?>(null)
+        private set
+
+    fun selectPaperGrade(grade: Constants.PaperGrade) {
+        if (grade.id == paperGrade.id) return
+        paperGrade = grade
+        paperVersionId = ""
+        paperVersions = emptyList()
+        loadPaperVersions()
+        loadPapers(reset = true)
+    }
+
+    fun selectPaperVersion(versionId: String) {
+        if (versionId == paperVersionId) return
+        paperVersionId = versionId
+        loadPapers(reset = true)
+    }
+
+    /** 教材版本列表：跟着年级走，年级是「最新」时没有版本可筛 */
+    private fun loadPaperVersions() {
+        val grade = paperGrade
+        if (grade.id.isBlank()) return
+        viewModelScope.launch {
+            paperVersions = runCatching {
+                Api.paperVersions(client, grade.subject, grade.id)
+            }.getOrDefault(emptyList())
+        }
+    }
+
+    fun loadPapers(reset: Boolean = false) {
+        val grade = paperGrade
+        val version = paperVersionId
+        viewModelScope.launch {
+            loadInto(paperFeed, { paperFeed = it }, reset) { page ->
+                Api.papers(client, page, grade.id, version)
+            }
+        }
+        if (reset) ensurePaperCollections()
+    }
+
+    /** 进试卷库时先把收藏列表拉一遍，用来点亮列表里的收藏图标 */
+    private fun ensurePaperCollections() {
+        if (paperCollectionFeed.loaded) return
+        viewModelScope.launch {
+            runCatching { Api.paperCollections(client, 0) }
+                .onSuccess {
+                    collectedPaperIds = it.items.map { p -> p.id }.toSet()
+                    paperCollectionFeed = FeedState(items = it.items, hasMore = it.hasMore, page = 0, loaded = true)
+                }
+        }
+    }
+
+    fun loadPaperCollections(reset: Boolean = false) {
+        viewModelScope.launch {
+            loadInto(paperCollectionFeed, { paperCollectionFeed = it }, reset) { page ->
+                val p = Api.paperCollections(client, page)
+                if (reset || page == 0) collectedPaperIds = p.items.map { it.id }.toSet()
+                p
+            }
+        }
+    }
+
+    /** 收藏 / 取消收藏试卷 */
+    fun togglePaperCollection(paper: Paper) {
+        val on = paper.id !in collectedPaperIds
+        viewModelScope.launch {
+            runCatching { Api.collectPaper(client, paper, on) }
+                .onSuccess {
+                    collectedPaperIds = if (on) collectedPaperIds + paper.id else collectedPaperIds - paper.id
+                    toast = if (on) "已收藏" else "已取消收藏"
+                }
+                .onFailure { toast = "操作失败：${friendlyError(it)}" }
+        }
+    }
+
+    /** 试卷库里的搜索（GetSearchPapers7） */
+    fun searchPapers(keyword: String) {
+        paperSearchKeyword = keyword
+        if (keyword.isBlank()) {
+            paperSearchFeed = FeedState()
+            return
+        }
+        viewModelScope.launch {
+            loadInto(paperSearchFeed, { paperSearchFeed = it }, true) { page ->
+                Api.searchPapers(client, keyword, page)
+            }
+        }
+    }
+
+    fun loadMorePaperSearch() {
+        if (paperSearchKeyword.isBlank()) return
+        viewModelScope.launch {
+            loadInto(paperSearchFeed, { paperSearchFeed = it }, false) { page ->
+                Api.searchPapers(client, paperSearchKeyword, page)
+            }
+        }
+    }
+
+    /** 打开一份试卷：能看题的（type=1）才去拉题目 */
+    fun openPaper(paper: Paper) {
+        currentPaper = paper
+        paperDetail = null
+        paperDetailError = null
+        paperDetailLoading = paper.canOpen
+        if (!paper.canOpen) {
+            paperDetailError = "这份试卷暂不支持在线查看题目 —— 服务端只对同步卷开放了题目接口"
+            return
+        }
+        viewModelScope.launch {
+            runCatching { Api.paperDetail(client, paper) }
+                .onSuccess { d ->
+                    paperDetailLoading = false
+                    if (d == null || d.groups.isEmpty()) {
+                        paperDetailError = "这份试卷暂时没有题目数据"
+                    } else {
+                        paperDetail = d
+                    }
+                }
+                .onFailure {
+                    paperDetailLoading = false
+                    paperDetailError = friendlyError(it)
+                }
         }
     }
 

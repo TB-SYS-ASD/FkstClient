@@ -454,3 +454,84 @@ def upload_audio(client, path, filename=None, mime="audio/mpeg"):
     data = p.read_bytes()
     name = filename or p.name
     return client.upload_audio(data, filename=name, mime=mime)
+
+
+# --------------------------------------------------------------- 试卷库
+#
+# 2026-09-26 实测。官方的在线答题是 H5，第三方一律「非法访问-1」，
+# 所以这里做的是「试卷库」：按年级/教材版本浏览真实试卷、搜试卷、收藏，
+# 并且**能直接把题目、答案、解析读出来**（GetZJPaperById5，只对 type=1 的同步卷有效）。
+#
+# ⚠️ GetShuatiPaper5 / GetZJPaperById5 / GetSearchPapers7 的响应里**没有 res 字段**，
+#    这几个函数内部统一走 expect_res=False。
+
+def get_papers(client, page=0, f_gradeid="", version_id=""):
+    """试卷列表（GetShuatiPaper5）→ {"papers": [...], "over": bool}
+
+    实测只有 `f_gradeid`（年级）和 `version_id`（教材版本）会生效，
+    且 `version_id` 必须跟 `f_gradeid` 一起传（单独传 0 条）。
+    `subject` / `xd` / `papertype` 传了会被服务端忽略。
+    """
+    params = {"page": str(page)}
+    if f_gradeid:
+        params["f_gradeid"] = str(f_gradeid)
+    if version_id:
+        params["version_id"] = str(version_id)
+    return client.request("GET_PAPERS", expect_res=False, **params)
+
+
+def get_paper_detail(client, pid, type_="1", aid="0"):
+    """试卷详情（GetZJPaperById5）→ {"paper": {..., "questionlist": [...]}, "tag": ...}
+
+    `pid` 与 `paperid` 都填试卷 id，`type` 填试卷自带的 type。
+    ⚠️ **只有 type=1（同步卷）拿得到题目**，其它 type 回 res=1；
+    id 不存在时 `questionlist` 为 None（真有校验，不是无脑成功）。
+    """
+    return client.request(
+        "GET_PAPER_DETAIL", expect_res=False,
+        pid=str(pid), paperid=str(pid), type=str(type_), aid=str(aid),
+    )
+
+
+def get_paper_versions(client, subject, f_gradeid, filter_="1"):
+    """教材版本列表（GetSTFilterData）→ [{"version": "人教版（新教材）", "version_id": "196579"}, …]"""
+    r = client.request(
+        "GET_PAPER_VERSIONS",
+        filter=str(filter_), subject=str(subject), f_gradeid=str(f_gradeid),
+    )
+    return r.get("filters") or []
+
+
+def collect_paper(client, pid, type_="1", on=True):
+    """收藏 / 取消收藏试卷（CollectShuatiPaper：status + type + pid）。
+
+    可逆验证过：收藏 pid=80446 → 收藏列表出现；取消 → 消失。
+    """
+    return client.request(
+        "COLLECT_PAPER", expect_res=False,
+        status="1" if on else "0", type=str(type_), pid=str(pid),
+    )
+
+
+def get_paper_collections(client, page=0, type_=None):
+    """我收藏的试卷（GetCollectionShuatiPaper5）→ {"papers": [...], "over": bool}
+
+    type 有白名单：0 / 1 / 2 / 12 有效，其它值（如考研卷的 22）回 res=1。
+    """
+    from .constants import PAPER_COLLECT_TYPE
+    return client.request(
+        "GET_PAPER_COLLECTIONS",
+        type=str(type_ or PAPER_COLLECT_TYPE), page=str(page),
+    )
+
+
+def search_papers(client, keyword, page=0, ct=20):
+    """搜试卷（GetSearchPapers7，**comment 签名变体**）→ matches[]
+
+    返回字段是 pid / topic_title / logo / type / tag1，跟列表接口的 papers[] 不同。
+    搜出来的多是考研（22）/ 专升本（14）这类卷子，**看不了题目**。
+    """
+    return client.request(
+        "SEARCH_PAPERS", expect_res=False,
+        keyword=keyword, page=str(page), ct=str(ct),
+    )

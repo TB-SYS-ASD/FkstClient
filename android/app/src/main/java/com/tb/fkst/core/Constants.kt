@@ -89,6 +89,64 @@ object Constants {
     /** 用户笔记列表的 type（0 = 全部） */
     const val USER_NOTE_ALL = "0"
 
+    // ---------------------------------------------------------------- 试卷库
+    //
+    // 2026-09-26 实测（v1.9.0 新增的「试卷」板块，取代做不了的官方 H5 刷题）：
+    //
+    //   GetShuatiPaper5           试卷列表。**只有 f_gradeid（年级）和 version_id
+    //                             （教材版本，须与 f_gradeid 一起传）真正生效**；
+    //                             subject / xd / papertype 单独传会被服务端直接忽略。
+    //                             ⚠️ 响应里**没有 res 字段**，调用时要 expectRes=false。
+    //   GetZJPaperById5           试卷详情：pid + type + aid + paperid，返回
+    //                             paper.questionlist[]，每组 {qtype, question[]}，
+    //                             题目带 question_text / answer_text / explanation_text。
+    //                             ⚠️ 只对 **type=1（同步卷）** 有效，其它 type 回 res=1；
+    //                             不存在的 id 回 questionlist=null —— 真有校验。
+    //                             （名称里的 ZJ 不是「组卷」的拼音缩写误猜，官方端
+    //                              SimplePaperFragment 之外的详情页就是走它。）
+    //   CollectShuatiPaper        收藏试卷：status + type + pid。
+    //                             ⚠️ 它**恒回 res=0** —— 对不存在的 pid 也是 0，
+    //                             所以无法从返回值判断成败，只能乐观更新本地收藏状态。
+    //                             首次实测可逆（收藏 → 收藏列表出现；取消 → 消失），
+    //                             但当天晚些时候复测出现过「返回 0、列表里查不到」的情况
+    //                             （同一时段笔记收藏列表、赞过列表也一起 res=1，
+    //                             怀疑是服务端侧抖动 / 高频调用被限），所以别把收藏当可靠存储。
+    //   GetCollectionShuatiPaper5 我收藏的试卷：type 有白名单（0/1/2/12 有效，22 回 res=1）。
+    //   GetSTFilterData           教材版本列表：filter=1 + subject + f_gradeid。
+    //   GetSearchPapers7          搜试卷：**comment 签名变体**，返回 matches[]（pid/type/logo）。
+    //                             搜出来的卷子 type 多是 22/14/1111…，这些**看不了题**。
+    //
+    // 学段 xd：1 小学 / 2 初中 / 3 高中。年级映射是**实测校准**的：
+    // 拿每个 f_gradeid 拉一页，按返回的卷子标题反推（例如 f_gradeid=7 全是「四年级」）。
+    // subject 是这批卷子自带的学科码（3 数学 / 4 英语 / 7 化学），拉版本列表时要带上。
+    // 表里刻意只留校准过的项 —— 像 f_gradeid=17/25 这种返回的卷子年级对不上的，没放进来。
+
+    /** 试卷库筛选用的年级项 */
+    data class PaperGrade(
+        val id: String,
+        val label: String,
+        val xd: String,
+        val subject: String,
+    )
+
+    val PAPER_GRADES: List<PaperGrade> = listOf(
+        PaperGrade("", "最新", "", "4"),
+        PaperGrade("1", "一年级", "1", "4"),
+        PaperGrade("3", "二年级", "1", "4"),
+        PaperGrade("5", "三年级", "1", "4"),
+        PaperGrade("7", "四年级", "1", "4"),
+        PaperGrade("9", "五年级", "1", "4"),
+        PaperGrade("11", "六年级", "1", "4"),
+        PaperGrade("13", "七年级·数学", "2", "3"),
+        PaperGrade("15", "八年级·数学", "2", "3"),
+        PaperGrade("19", "八年级·英语", "2", "4"),
+        PaperGrade("21", "九年级·化学", "2", "7"),
+        PaperGrade("23", "高中·数学", "3", "3"),
+    )
+
+    /** 收藏列表的 type 白名单：同步卷 1，其余是其它模块的卷子 */
+    const val PAPER_COLLECT_TYPE = "1"
+
     // ---------------------------------------------------------------- 图片上传
     //
     // 2026-09-25 实测 OSSUploadImage4.php：
@@ -484,6 +542,46 @@ object Endpoints {
         "UPDATE_NOTE_URLS" to Endpoint(
             path = "UpdateUploadNoteUrls",
             required = listOf("id", "urls"),
+        ),
+
+        // ---------------- 试卷库 ----------------
+        // 细节见 Constants 里「试卷库」那段注释。共用的坑先写在最前面：
+        //   **GetShuatiPaper5 / GetZJPaperById5 / GetSearchPapers7 的响应里没有 res 字段**，
+        //   调用时必须 expectRes=false，否则会被当成失败抛异常。
+        //
+        // 列表：page 分页，f_gradeid + version_id 筛选（version_id 要搭配 f_gradeid）。
+        "GET_PAPERS" to Endpoint(
+            path = "GetShuatiPaper5",
+            defaults = mapOf("page" to "0"),
+        ),
+        // 详情：pid / paperid 都填试卷 id，type 填试卷自带的 type（只有 1 有题目），aid 固定 0
+        "GET_PAPER_DETAIL" to Endpoint(
+            path = "GetZJPaperById5",
+            required = listOf("pid", "type"),
+            defaults = mapOf("aid" to "0"),
+        ),
+        // 教材版本列表：filter=1 固定，subject + f_gradeid 决定返回哪一套
+        "GET_PAPER_VERSIONS" to Endpoint(
+            path = "GetSTFilterData",
+            required = listOf("subject", "f_gradeid"),
+            defaults = mapOf("filter" to "1"),
+        ),
+        // 收藏 / 取消收藏试卷：status=1 收藏、0 取消，type 用试卷的 type
+        "COLLECT_PAPER" to Endpoint(
+            path = "CollectShuatiPaper",
+            required = listOf("status", "type", "pid"),
+        ),
+        // 我收藏的试卷（type 白名单：0 / 1 / 2 / 12）
+        "GET_PAPER_COLLECTIONS" to Endpoint(
+            path = "GetCollectionShuatiPaper5",
+            defaults = mapOf("type" to Constants.PAPER_COLLECT_TYPE, "page" to "0"),
+        ),
+        // 搜试卷：comment 签名变体，必需 keyword + page + ct
+        "SEARCH_PAPERS" to Endpoint(
+            path = "GetSearchPapers7",
+            sign = "comment",
+            required = listOf("keyword", "page"),
+            defaults = mapOf("page" to "0", "ct" to "20"),
         ),
     )
 }

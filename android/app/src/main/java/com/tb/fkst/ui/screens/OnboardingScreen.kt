@@ -250,7 +250,22 @@ private fun NoExerciseStep(onDone: () -> Unit) {
                     + "也就是试卷只能看个标题，做不了。")
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    "所以这个客户端专注社区",
+                    "现在：换成了「试卷库」",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(8.dp))
+                ExplainerPara("后来把试卷那块的接口重新挖了一遍，发现题目其实是拿得到的——"
+                    + "只是要四个参数一起传，之前差了一个。于是 1.9.0 开始有了「试卷」板块："
+                    + "能按年级、教材版本浏览真实试卷，能搜、能收藏，"
+                    + "点进去能看到整份卷子的题目、答案和解析。")
+                Spacer(Modifier.height(8.dp))
+                ExplainerPara("唯一还是做不了的是「在线交卷」：答题页是官方网页，"
+                    + "对第三方客户端一律拒绝访问，服务端也没有开放提交答题记录的接口。"
+                    + "所以它是个「查卷子 + 看题看解析」的工具，不是刷题机。")
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "社区这边照旧",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )

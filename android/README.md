@@ -7,16 +7,18 @@
 
 ## 一、功能清单
 
-底部导航四项：**发现 / 搜索 / 私信 / 我的**（原「关注」tab 已并入发现页的二级切换）
+底部导航五项：**试卷 / 发现 / 搜索 / 私信 / 我的**（原「关注」tab 已并入发现页的二级切换）
 
 **第一次打开 App** 会先走两步引导（之后不再出现）：
 1. **用户政策**：非官方第三方客户端的使用须知与隐私说明，勾选同意才能继续；
-2. **为什么没有「刷题」模块**：讲清楚题库接口不接受筛选参数、试卷取不到题这两个
-   服务端限制 —— 做过一版刷题界面又删掉了，这里给用户一个交代。
+2. **为什么没有「刷题」模块**：讲清楚题库接口不接受筛选参数、在线答题页对第三方拒绝访问
+   这两个服务端限制 —— 做过一版刷题界面又删掉了，这里给用户一个交代，
+   同时说明现在改成了**试卷库**（能看题目和解析，但不能在线交卷）。
 
 | 模块 | 能力 |
 |---|---|
 | 首次引导 | 用户政策（同意一次，持久化）+ 刷题模块说明页，只在第一次打开时出现 |
+| 试卷库 | 底部导航第一位（`PaperLibraryScreen`）：**按年级 / 教材版本筛选浏览真实试卷**（`GetShuatiPaper5`）、**搜试卷**（`GetSearchPapers7`，comment 签名）、**收藏**（`CollectShuatiPaper`，可逆验证过）、「我收藏的试卷」列表；点进详情页能看**整份卷子的题目 + 答案 + 解析**（`GetZJPaperById5`，按大题分组，答案默认收起、可一键展开）。限制：只有 `type=1` 的同步卷有题目；**在线交卷做不到**（官方 H5 恒回「非法访问-1」） |
 | 更新检查 | 启动时**静默**从 GitHub Releases（`releases/latest`）查一次新版本；有更新弹窗（去下载 / 跳过此版本 / 稍后），设置页也有手动「检查更新」按钮；tag 解析不出 `v?x.y.z` 或网络失败都静默跳过，绝不打扰 |
 | 登录 | 手机号 + 密码（`STAccountLogin3`，`verify_type=1`），会话持久化，记住手机号 |
 | 发现 | 顶部「推荐 / 关注」二级切换；推荐 = 11 个分区（日常 / 好物 / 试卷 / 难题趣题 / 学习经验 / 绘画 / 学习Plog / 手工种植 / 飞花令 / 作文随笔 / 书法），分页 + 滚动到底自动加载 |
@@ -261,8 +263,9 @@ android/
             │   ├── UpdateChecker.kt   # GitHub Releases 版本检查（启动静默 + 手动）
             │   └── JsonExt.kt          # org.json 安全取值扩展
             ├── data/
-            │   ├── Models.kt       # Note / Comment / Reply / UserProfile / Letter / ...
-            │   ├── Api.kt          # 业务封装（挂起函数）
+            │   ├── Models.kt       # Note / Comment / Reply / UserProfile / Letter /
+            │   │                   # Paper / PaperDetail / PaperQuestion / PaperVersion
+            │   ├── Api.kt          # 业务封装（挂起函数，含试卷库那几个）
             │   └── Repository.kt   # 会话与偏好持久化（SharedPreferences）
             └── ui/
                 ├── AppViewModel.kt # 全局状态（FeedState 泛型分页）
@@ -275,6 +278,7 @@ android/
                                     # LetterList / LetterChat / ImageViewer /
                                     # Notices / Settings / PublishNote /
                                     # EditNote（改自己笔记的配图） /
+                                    # PaperLibrary（试卷库）/ PaperDetail（题目+答案解析）/
                                     # Onboarding（首次引导：政策 + 刷题说明）
 ```
 
@@ -383,4 +387,6 @@ java -cp out VerifyKotlinLogic
    `questionExercise-v17` 恒回「请求不合法-1」、`verifyShareQuestionExercise-v2`
    恒回「非法访问」，换 `id` / `qid` / `ids` / `paper_id` / `kid` / `xd+subject`
    等各种参数组合**提示完全不变**，说明卡在登录态 / 签名这一层而不是参数名。
-   所以「试卷 → 题目」那条链依旧是断的，刷题模块没有重做。
+   所以在线答题依旧做不了，1.9.0 起改成**试卷库**：题目走 `GetZJPaperById5`
+   （pid + paperid + type + aid，缺一个就拿不到），能看题 / 答案 / 解析，
+   但**交卷和在线答题没有可用接口**。细节见 `API_RESEARCH.md` 第 18 节。

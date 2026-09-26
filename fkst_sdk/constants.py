@@ -311,7 +311,73 @@ ENDPOINTS = {
         "path": "DeleteShuatiNote",
         "required_params": ["nid"],
     },
+
+    # --- 试卷库（2026-09-26 实测，客户端 1.9.0 的「试卷」板块） ---
+    #
+    # 官方的在线答题是 H5（questionExercise-v17 / paperExercises-v18 / simpleUsePaper），
+    # 第三方一律「非法访问-1」，所以只能做「试卷库」：浏览 / 筛选 / 收藏 + **读题目答案解析**。
+    #
+    # ⚠️ GetShuatiPaper5 / GetZJPaperById5 / GetSearchPapers7 的响应**没有 res 字段**，
+    #    调用时必须 expect_res=False，否则会被当成失败。
+    "GET_PAPERS": {                  # 试卷列表：page 分页，f_gradeid + version_id 筛选
+        # 实测：只有这两个参数真正生效（version_id 必须搭配 f_gradeid，单独传 0 条）；
+        # subject / xd / papertype 传了会被忽略。
+        "path": "GetShuatiPaper5",
+        "default_params": {"page": "0"},
+    },
+    "GET_PAPER_DETAIL": {            # 试卷详情：pid + paperid(同 pid) + type + aid=0
+        # 返回 paper.questionlist[]，每组 {qtype, question[]}，
+        # 题目带 question_text / answer_text / explanation_text（都是 HTML）。
+        # ⚠️ 只对 **type=1（同步卷）** 有效，其它 type 回 res=1；不存在的 id 回 questionlist=null。
+        "path": "GetZJPaperById5",
+        "required_params": ["pid", "type"],
+        "default_params": {"aid": "0"},
+    },
+    "GET_PAPER_VERSIONS": {          # 教材版本列表：filter=1 + subject + f_gradeid
+        "path": "GetSTFilterData",
+        "required_params": ["subject", "f_gradeid"],
+        "default_params": {"filter": "1"},
+    },
+    "COLLECT_PAPER": {               # 收藏/取消收藏试卷：status(1/0) + type + pid
+        # 实测可逆：收藏 pid=80446 → GetCollectionShuatiPaper5 里出现；取消 → 消失
+        "path": "CollectShuatiPaper",
+        "required_params": ["status", "type", "pid"],
+    },
+    "GET_PAPER_COLLECTIONS": {       # 我收藏的试卷：type 白名单 0/1/2/12（22 会 res=1）
+        "path": "GetCollectionShuatiPaper5",
+        "default_params": {"type": "1", "page": "0"},
+    },
+    "SEARCH_PAPERS": {               # 搜试卷：**comment 签名变体**，返回 matches[]
+        "path": "GetSearchPapers7",
+        "sign": "comment",
+        "required_params": ["keyword", "page"],
+        "default_params": {"page": "0", "ct": "20"},
+    },
 }
+
+# 试卷库筛选用的年级（f_gradeid）。
+#
+# 实测校准：拿每个 f_gradeid 拉一页，按返回卷子的标题反推年级与学科
+# （例：f_gradeid=7 全是「四年级」，f_gradeid=15 全是「八年级数学」）。
+# subject 是这批卷子自带的学科码（3 数学 / 4 英语 / 7 化学），拉版本列表时要带上。
+# 只留校准得准的项 —— f_gradeid=17/25 返回的卷子年级对不上，没放进来。
+PAPER_GRADES = [
+    {"id": "", "label": "最新", "xd": "", "subject": "4"},
+    {"id": "1", "label": "一年级", "xd": "1", "subject": "4"},
+    {"id": "3", "label": "二年级", "xd": "1", "subject": "4"},
+    {"id": "5", "label": "三年级", "xd": "1", "subject": "4"},
+    {"id": "7", "label": "四年级", "xd": "1", "subject": "4"},
+    {"id": "9", "label": "五年级", "xd": "1", "subject": "4"},
+    {"id": "11", "label": "六年级", "xd": "1", "subject": "4"},
+    {"id": "13", "label": "七年级·数学", "xd": "2", "subject": "3"},
+    {"id": "15", "label": "八年级·数学", "xd": "2", "subject": "3"},
+    {"id": "19", "label": "八年级·英语", "xd": "2", "subject": "4"},
+    {"id": "21", "label": "九年级·化学", "xd": "2", "subject": "7"},
+    {"id": "23", "label": "高中·数学", "xd": "3", "subject": "3"},
+]
+
+# 收藏列表查的是同步卷（type=1）
+PAPER_COLLECT_TYPE = "1"
 
 # ⚠️ 已废弃（2026-09-25 复测）：这只是当初对「官方草稿格式」的猜测，
 #   服务端**并不按这个结构解析** —— `content` 就是纯文本正文。
