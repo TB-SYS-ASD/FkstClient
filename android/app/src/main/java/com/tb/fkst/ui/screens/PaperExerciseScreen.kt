@@ -82,8 +82,15 @@ fun PaperExerciseScreen(vm: AppViewModel, nav: NavHostController) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
+                val loggedIn = vm.client.mid.isNotBlank() ||
+                    vm.client.dynamicParams["unionid"]?.isNotBlank() == true
                 EmptyBox(
-                    if (paper == null) "请先从试卷详情进入" else "需要先登录才能进入实时练习",
+                    when {
+                        paper == null -> "请先从试卷详情进入"
+                        // 旧版本（≤v1.10.0）登录的会话没有 loginToken，升级后不会自动补
+                        loggedIn -> "当前会话缺少实时练习凭据（旧版本登录所致），请退出后重新登录"
+                        else -> "需要先登录才能进入实时练习"
+                    },
                 )
             }
             else -> ExerciseWebView(
