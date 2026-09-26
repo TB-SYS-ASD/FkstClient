@@ -84,18 +84,9 @@ class AppViewModel(val repo: Repository) : ViewModel() {
     var policyAgreed by mutableStateOf(repo.policyAgreed)
         private set
 
-    /** 政策同意后跟着展示一次的「为什么没有刷题模块」说明，看完置 true */
-    var noExerciseExplained by mutableStateOf(repo.noExerciseExplained)
-        private set
-
     fun acceptPolicy() {
         repo.policyAgreed = true
         policyAgreed = true
-    }
-
-    fun markNoExerciseExplained() {
-        repo.noExerciseExplained = true
-        noExerciseExplained = true
     }
 
     /** 引导页点了「不同意」：关闭整个应用 */

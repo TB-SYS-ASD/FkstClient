@@ -174,14 +174,6 @@ class Repository(private val appContext: Context) {
         get() = prefs.getBoolean("policy_agreed", false)
         set(v) = prefs.edit().putBoolean("policy_agreed", v).apply()
 
-    /**
-     * 「为什么没有刷题模块」的说明页是否已看过。
-     * 同意政策后紧接着展示一次，看完（或点跳过）就不再出现。
-     */
-    var noExerciseExplained: Boolean
-        get() = prefs.getBoolean("no_exercise_explained", false)
-        set(v) = prefs.edit().putBoolean("no_exercise_explained", v).apply()
-
     // -------------------------------------------------------- 更新检查
 
     /** 「跳过此版本」记录的 Release tag（如 "v1.7.0"）；空 = 没跳过过任何版本 */
