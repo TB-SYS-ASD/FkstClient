@@ -127,6 +127,35 @@ fun PaperExerciseScreen(vm: AppViewModel, nav: NavHostController) {
 
 private var webRef: WebView? = null
 
+private const val H5_HOME = "https://www.yaerxing.com/"
+
+/**
+ * 两段式 cookie bootstrap（桌面端 window.py 2026-08-11 实测同款坑，勿直载）：
+ * paperExercises 页面内 ajax 拉题干需要 yex_session cookie——直载答题页只种
+ * XSRF-TOKEN，题干全空（只剩题号骨架）。先静默访问 H5 首页种会话 cookie，
+ * 首页加载完成后再载目标答题页。
+ */
+private class BootstrapClient(
+    private val onLoadingStart: () -> Unit,
+    private val onLoadingDone: () -> Unit,
+) : WebViewClient() {
+    var pendingTarget: String? = null
+
+    override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+        onLoadingStart()
+    }
+
+    override fun onPageFinished(view: WebView?, url: String?) {
+        val target = pendingTarget
+        if (view != null && target != null) {
+            pendingTarget = null
+            view.loadUrl(target)
+            return // 目标页加载中，保持 loading
+        }
+        onLoadingDone()
+    }
+}
+
 @Composable
 private fun ExerciseWebView(url: String, modifier: Modifier = Modifier) {
     var loading by remember { mutableStateOf(true) }
@@ -142,21 +171,35 @@ private fun ExerciseWebView(url: String, modifier: Modifier = Modifier) {
                     settings.useWideViewPort = true
                     settings.userAgentString = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 " +
                         "(KHTML, like Gecko) Chrome/120.0 Mobile wv"
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                            loading = true
-                        }
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            loading = false
-                        }
-                    }
+                    android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                    val client = BootstrapClient(
+                        onLoadingStart = { loading = true },
+                        onLoadingDone = { loading = false },
+                    )
+                    webViewClient = client
                     webRef = this
-                    loadUrl(url)
+                    tag = url
+                    if (url.contains("paperExercises")) {
+                        client.pendingTarget = url
+                        loadUrl(H5_HOME)
+                    } else {
+                        loadUrl(url)
+                    }
                 }
             },
             update = { wv ->
-                // URL 变化（换卷）时重新加载
-                if (wv.url != url) wv.loadUrl(url)
+                // URL 变化（换卷）时重新走 bootstrap；bootstrap 首页阶段不干预
+                if (wv.tag != url) {
+                    wv.tag = url
+                    val client = wv.webViewClient as? BootstrapClient
+                    if (url.contains("paperExercises")) {
+                        client?.pendingTarget = url
+                        wv.loadUrl(H5_HOME)
+                    } else {
+                        client?.pendingTarget = null
+                        wv.loadUrl(url)
+                    }
+                }
             },
         )
         if (loading) {

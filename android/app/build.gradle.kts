@@ -11,8 +11,8 @@ android {
         applicationId = "com.tb.fkst"
         minSdk = 24
         targetSdk = 34
-        versionCode = 15
-        versionName = "1.11.3"
+        versionCode = 16
+        versionName = "1.11.4"
         resourceConfigurations += listOf("zh", "en")
     }
 
