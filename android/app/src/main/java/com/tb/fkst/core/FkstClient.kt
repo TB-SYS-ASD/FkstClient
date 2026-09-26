@@ -370,6 +370,23 @@ class FkstClient(
             "loginToken" to payload.str("loginToken"),
             "tokenSeed" to payload.str("tokenSeed"),
         )
+
+        // STAccountLogin3 的明文响应里实测（2026-09-26）**没有** loginToken/tokenSeed，
+        // 必须再走一次官方的 YEX 加密登录通道拿 encryptedAccount 解出来。
+        // YEX 登录失败不阻塞主登录（ST 会话照常用，只是实时练习不可用）。
+        try {
+            val account = YexLogin.passwordLogin(phone, password, this)
+            updateDynamic(
+                "unionid" to account.str("unionid"),
+                "openid" to account.str("openid"),
+                "mid" to account.str("mid"),
+                "device_token" to account.str("deviceToken"),
+                "loginToken" to account.str("loginToken"),
+                "tokenSeed" to account.str("tokenSeed"),
+            )
+        } catch (t: Throwable) {
+            android.util.Log.w("FkstClient", "YEX 登录失败（实时练习不可用）: ${t.message}")
+        }
         return payload
     }
 }
