@@ -1008,7 +1008,12 @@ data class PaperQuestion(
     val answer: String,
     val explanation: String,
     val isMultiple: Boolean,
+    /** 选项（A/B/C/D…）—— `options` 原始值是 JSON 串 `{"A":"…"}`，这里解析成结构供交互式刷题用 */
+    val optionItems: List<PaperOption> = emptyList(),
 )
+
+/** 一道选择题的单个选项 */
+data class PaperOption(val label: String, val text: String)
 
 /** 一个大題（如「完形填空」）及其下面的小题 */
 data class PaperGroup(
@@ -1040,6 +1045,7 @@ data class PaperDetail(
                                     answer = paperText(q.str("answer_text")),
                                     explanation = paperText(q.str("explanation_text")),
                                     isMultiple = q.boolOr("is_multiple_choice"),
+                                    optionItems = parsePaperOptions(q.str("options")),
                                 )
                             }
                         }
@@ -1148,4 +1154,21 @@ fun paperText(raw: String?): String {
     // 这里不能用 forEach：lambda 捕获的 var 会让编译器报 smart cast 失败
     for ((e, c) in HTML_ENTITIES) t = t.replace(e, c)
     return com.tb.fkst.core.Crypto.stripTags(t)
+}
+
+/**
+ * 试卷题目的选项：服务端把 `options` 塞成一个 JSON 串 `{"A":"…","B":"…"}`（填空题是空串）。
+ * 这里解析成 [PaperOption] 列表，供交互式刷题渲染；解析失败就返回空表（按填空题处理）。
+ */
+fun parsePaperOptions(raw: String?): List<PaperOption> {
+    val s = raw?.trim().orEmpty()
+    if (!s.startsWith("{")) return emptyList()
+    return runCatching {
+        val o = JSONObject(s)
+        o.keys().asSequence()
+            .map { k -> PaperOption(k, paperText(o.optString(k))) }
+            .filter { it.text.isNotBlank() }
+            .sortedBy { it.label }
+            .toList()
+    }.getOrDefault(emptyList())
 }

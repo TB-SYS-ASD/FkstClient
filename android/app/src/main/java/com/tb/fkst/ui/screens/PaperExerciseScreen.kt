@@ -23,8 +23,10 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,8 +43,10 @@ import com.tb.fkst.ui.components.EmptyBox
 /**
  * H5 实时答题：把官方 paperExercises-v18 页面（带签名的会话参数）丢进 WebView。
  *
- * 这是绕过「第三方 native 交卷被挡」的唯一正路 —— 官方 H5 接受我们的合法会话，
- * 真能答题、交卷。会话身份全在带 HMAC 签名的 query 参数里，不需要同步 cookie。
+ * ⚠️ 官方页面只对**部分**试卷提供完整题面。实测（2026-09-26）：「答案暂缺」那类卷子
+ * 服务端会返回「降级版」页面 —— 只有题目 ID、不带 shuati-fun 渲染引擎，题干要宿主
+ * 通过 `getCacheData()` 注入（那张仁爱版 Unit8 卷 54KB，正常卷 32 万+ 字节）。
+ * 这种卷进 H5 必然是空壳，所以加载完成后探一次；没题面就自动切到原生刷题。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,26 +71,59 @@ fun PaperExerciseScreen(vm: AppViewModel, nav: NavHostController) {
         loginTokenState.value = vm.client.dynamicParams["loginToken"] ?: ""
     }
 
+    // H5 页面探测结果：官方没给题面 → 走原生刷题
+    var h5NoContent by remember(paper?.id) { mutableStateOf(false) }
+    // 用户手动切回官方 H5
+    var forceH5 by remember(paper?.id) { mutableStateOf(false) }
+    val detail = vm.paperDetail
+    val quizMode = h5NoContent && !forceH5 && detail != null
+
+    // 要走原生刷题时，确保题目数据在手（和「试卷详情」同一份接口）
+    LaunchedEffect(paper?.id, h5NoContent) {
+        if (paper != null && h5NoContent && detail == null &&
+            !vm.paperDetailLoading && vm.paperDetailError == null
+        ) {
+            vm.openPaper(paper)
+        }
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(paper?.title?.ifBlank { "实时练习" } ?: "实时练习") },
-                navigationIcon = {
-                    IconButton(onClick = { nav.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { webRef?.reload() }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "刷新")
-                    }
-                },
-            )
+            if (!quizMode) {
+                TopAppBar(
+                    title = { Text(paper?.title?.ifBlank { "实时练习" } ?: "实时练习") },
+                    navigationIcon = {
+                        IconButton(onClick = { nav.popBackStack() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    },
+                    actions = {
+                        if (url != null && forceH5) {
+                            TextButton(onClick = { forceH5 = false }) { Text("原生") }
+                        } else if (h5NoContent && detail != null) {
+                            TextButton(onClick = { forceH5 = true }) { Text("官方 H5") }
+                        }
+                        IconButton(onClick = { webRef?.reload() }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "刷新")
+                        }
+                    },
+                )
+            }
         },
     ) { padding ->
         when {
+            quizMode -> PaperQuizScreen(
+                detail = detail!!,
+                onBack = { nav.popBackStack() },
+                onSwitchToH5 = { forceH5 = true },
+                banner = "官方 H5 这卷没给题面（服务端只返回题目 ID，题干要原生注入）——已切到原生刷题，可正常作答、对答案。",
+                modifier = Modifier.fillMaxSize(),
+            )
+
             url == null -> Column(
-                Modifier.fillMaxSize().padding(padding),
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
@@ -95,7 +132,6 @@ fun PaperExerciseScreen(vm: AppViewModel, nav: NavHostController) {
                 EmptyBox(
                     when {
                         paper == null -> "请先从试卷详情进入"
-                        // 旧版本（≤v1.10.0）或 v1.11.1 之前登录的会话没有 loginToken
                         loggedIn -> "当前会话缺少实时练习凭据，请退出后重新登录"
                         else -> "需要先登录才能进入实时练习"
                     },
@@ -117,9 +153,35 @@ fun PaperExerciseScreen(vm: AppViewModel, nav: NavHostController) {
                     }
                 }
             }
+
+            // 探测说没题面，但题目数据还没拉回来
+            h5NoContent && !forceH5 -> Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                if (vm.paperDetailError != null) {
+                    EmptyBox(vm.paperDetailError ?: "题目加载失败")
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = { forceH5 = true }) { Text("还是看官方页面") }
+                } else {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "官方 H5 没给题面，正在准备原生刷题…",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+
             else -> ExerciseWebView(
                 url = url,
-                modifier = Modifier.fillMaxSize().padding(padding),
+                onNoContent = { h5NoContent = true },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
             )
         }
     }
@@ -130,6 +192,35 @@ private var webRef: WebView? = null
 private const val H5_HOME = "https://www.yaerxing.com/"
 
 /**
+ * 探测页面到底有没有题面（不能只看有没有题号：Vue 的 v-show 会把空的 .q-type 也留在 DOM 里）。
+ * 判据：官方渲染引擎 ShuatiMathod 在不在 + 正文有效字符数。降级页 = 无引擎且正文极短。
+ */
+private val PROBE_JS = """
+(function(){
+  try{
+    var b = document.body;
+    var t = b ? (b.innerText || '') : '';
+    var compact = t.replace(/\s+/g, '');
+    var eng = (typeof window.ShuatiMathod !== 'undefined') ? 1 : 0;
+    return JSON.stringify({len: compact.length, eng: eng});
+  }catch(e){ return JSON.stringify({len: -1, eng: 0, err: String(e)}); }
+})()
+""".trimIndent()
+
+private fun isDegraded(raw: String?): Boolean {
+    val s = raw?.trim().orEmpty()
+    if (s.isEmpty()) return false
+    // evaluateJavascript 回的是 JSON 字符串字面量（带引号转义）
+    val unquoted = s.removeSurrounding("\"")
+        .replace("\\\"", "\"")
+        .replace("\\\\", "\\")
+    val len = Regex("\"len\"\\s*:\\s*(-?\\d+)").find(unquoted)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+    val eng = Regex("\"eng\"\\s*:\\s*(\\d+)").find(unquoted)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+    if (eng == 1) return false
+    return len in 0..400
+}
+
+/**
  * 两段式 cookie bootstrap（桌面端 window.py 2026-08-11 实测同款坑，勿直载）：
  * paperExercises 页面内 ajax 拉题干需要 yex_session cookie——直载答题页只种
  * XSRF-TOKEN，题干全空（只剩题号骨架）。先静默访问 H5 首页种会话 cookie，
@@ -137,7 +228,7 @@ private const val H5_HOME = "https://www.yaerxing.com/"
  */
 private class BootstrapClient(
     private val onLoadingStart: () -> Unit,
-    private val onLoadingDone: () -> Unit,
+    private val onLoadingDone: (WebView?) -> Unit,
 ) : WebViewClient() {
     var pendingTarget: String? = null
 
@@ -152,13 +243,18 @@ private class BootstrapClient(
             view.loadUrl(target)
             return // 目标页加载中，保持 loading
         }
-        onLoadingDone()
+        onLoadingDone(view)
     }
 }
 
 @Composable
-private fun ExerciseWebView(url: String, modifier: Modifier = Modifier) {
+private fun ExerciseWebView(
+    url: String,
+    onNoContent: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var loading by remember { mutableStateOf(true) }
+    var probed by remember(url) { mutableStateOf(false) }
 
     Box(modifier) {
         AndroidView(
@@ -174,7 +270,15 @@ private fun ExerciseWebView(url: String, modifier: Modifier = Modifier) {
                     android.webkit.CookieManager.getInstance().setAcceptCookie(true)
                     val client = BootstrapClient(
                         onLoadingStart = { loading = true },
-                        onLoadingDone = { loading = false },
+                        onLoadingDone = { view ->
+                            loading = false
+                            if (view != null && !probed) {
+                                probed = true
+                                view.evaluateJavascript(PROBE_JS) { raw ->
+                                    if (isDegraded(raw)) onNoContent()
+                                }
+                            }
+                        },
                     )
                     webViewClient = client
                     webRef = this
@@ -191,6 +295,7 @@ private fun ExerciseWebView(url: String, modifier: Modifier = Modifier) {
                 // URL 变化（换卷）时重新走 bootstrap；bootstrap 首页阶段不干预
                 if (wv.tag != url) {
                     wv.tag = url
+                    probed = false
                     val client = wv.webViewClient as? BootstrapClient
                     if (url.contains("paperExercises")) {
                         client?.pendingTarget = url
