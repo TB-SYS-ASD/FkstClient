@@ -167,7 +167,7 @@ fun MyHomeScreen(vm: AppViewModel, nav: NavHostController) {
                                         vm.myStats?.let { s ->
                                             Spacer(Modifier.height(4.dp))
                                             Text(
-                                                text = "积分 ${s.coinCount} · 未读 ${s.unread}",
+                                                text = "硬币 ${s.coinCount} · 未读 ${s.unread}",
                                                 style = MaterialTheme.typography.labelMedium,
                                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                             )

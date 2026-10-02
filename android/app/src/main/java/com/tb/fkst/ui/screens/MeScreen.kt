@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MarkChatUnread
+import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
@@ -45,6 +47,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.tb.fkst.data.MyStats
 import com.tb.fkst.ui.AppViewModel
 import com.tb.fkst.ui.Routes
 import com.tb.fkst.ui.components.FkstAvatar
@@ -107,14 +110,6 @@ fun MeScreen(vm: AppViewModel, nav: NavHostController) {
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
-                        if (stats != null) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = "积分 ${stats.coinCount}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
-                        }
                         Spacer(Modifier.height(4.dp))
                         Text(
                             text = "查看我的主页 ›",
@@ -155,6 +150,11 @@ fun MeScreen(vm: AppViewModel, nav: NavHostController) {
                 Spacer(Modifier.height(12.dp))
             }
 
+            // 硬币余额：coin_count（GetSTMyData5），和签到领的是同一个
+            CoinBalanceCard(vm, stats)
+
+            Spacer(Modifier.height(12.dp))
+
             // 签到：连续 3 天解锁私信
             Card(
                 shape = RoundedCornerShape(20.dp),
@@ -182,8 +182,8 @@ fun MeScreen(vm: AppViewModel, nav: NavHostController) {
                             text = vm.coinState?.let {
                                 val sign = if (it.signedToday) " · 今日已签" else ""
                                 val auto = if (vm.autoCheckIn) " · 自动签到开" else ""
-                                "连续 ${it.signDays} 天 · 积分 ${it.coinCount}$sign$auto"
-                            } ?: "签到可领积分，连续 3 天解锁私信",
+                                "连续 ${it.signDays} 天 · 硬币 ${it.coinCount}$sign$auto"
+                            } ?: "签到可领硬币，连续 3 天解锁私信",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
@@ -320,5 +320,57 @@ private fun StatCell(label: String, value: Int, onClick: (() -> Unit)? = null) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * 硬币余额卡。
+ *
+ * 数值来自 `GetSTMyData5` 的 `coin_count`——签到领的是它、投币花的也是它，
+ * 所以优先用刚刷新过的 `coinState`，拿不到再退回统计里的那份。
+ * 拿不到数据时显示「—」而不是 0，免得把「没加载出来」误读成「余额为 0」。
+ */
+@Composable
+private fun CoinBalanceCard(vm: AppViewModel, stats: MyStats?) {
+    val balance = vm.coinState?.coinCount ?: stats?.coinCount
+
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.MonetizationOn,
+                contentDescription = "硬币",
+                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier.size(30.dp),
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "硬币",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+                Text(
+                    text = "投币给喜欢的笔记 · 每日签到可领",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+            }
+            Text(
+                text = balance?.toString() ?: "—",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+        }
     }
 }

@@ -905,7 +905,7 @@ class PendingAudio(
     }
 }
 
-/** 签到 / 积分状态（来自 GetSTMyData5） */
+/** 签到 / 硬币状态（来自 GetSTMyData5 的 coin_count / get_coin_day / get_coin_status） */
 data class CoinState(
     val coinCount: Int,
     val signDays: Int,

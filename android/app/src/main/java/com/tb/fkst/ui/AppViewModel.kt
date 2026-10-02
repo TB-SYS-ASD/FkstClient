@@ -1272,7 +1272,7 @@ class AppViewModel(val repo: Repository) : ViewModel() {
                     toast = "投币成功，已投 ${map[noteId]}/$coinPerNoteMax"
                     onDone(true, real)
                 }
-                // 余额变了，顺手刷新一下积分状态
+                // 余额变了，顺手刷新一下硬币状态
                 refreshCoin()
             } catch (t: Throwable) {
                 toast = "投币失败：${friendlyError(t)}"
@@ -1753,7 +1753,7 @@ class AppViewModel(val repo: Repository) : ViewModel() {
                         "今日已签到（连续 ${state?.signDays ?: 0} 天）"
                     } else {
                         val unlocked = if (state?.canSendLetter == true) " · 已解锁私信" else ""
-                        "签到成功！连续 ${state?.signDays ?: 0} 天 · 积分 ${state?.coinCount ?: 0}$unlocked"
+                        "签到成功！连续 ${state?.signDays ?: 0} 天 · 硬币 ${state?.coinCount ?: 0}$unlocked"
                     }
                 }
             } catch (t: Throwable) {
