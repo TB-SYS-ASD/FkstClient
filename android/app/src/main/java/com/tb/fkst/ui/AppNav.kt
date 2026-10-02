@@ -29,9 +29,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -260,7 +260,10 @@ private val TABS = listOf(
 
 @Composable
 fun MainScreen(vm: AppViewModel, nav: NavHostController) {
-    var tab by remember { mutableIntStateOf(0) }
+    // 必须用 rememberSaveable：二级页（设置 / 我的笔记 / 私信聊天…）都是独立的 nav route，
+    // 压栈后 MAIN 会退出组合，普通 remember 存的状态会被丢掉，返回时 tab 归 0 ——
+    // 表现就是「不管从哪个 tab 进去，返回后都被扔回第一个 tab」。
+    var tab by rememberSaveable { mutableStateOf(0) }
 
     Scaffold(
         bottomBar = {
