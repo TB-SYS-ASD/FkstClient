@@ -1133,3 +1133,91 @@ question[j] = {
 
 年级（`f_gradeid`）映射是实测校准的：拿每个值拉一页，按返回卷子的标题反推。
 `17`、`25`、`27` 这几个返回的卷子年级跟编号对不上，没有放进筛选表。
+
+---
+
+## 十九、勋章与硬币兑换（2026-10-02 实测）
+
+> 工具：`tools/probe_medal.py`（只读）
+> 起因：想在客户端里展示硬币余额 + 做「硬币兑换勋章」
+
+### 19.1 `STMedalDetails`：参数 `page` + `tab`，**`page` 从 0 开始**
+
+这是此前一直探不到数据的根因——**`page=1` 恒返回空数组**，`page=0` 才有内容：
+
+```
+POST /STMedalDetails  page=0&tab=1
+→ {"over":true,"res":0,
+   "details":[{"id":"18904185","type":"9","format_date":"2026\/09\/25 10:01",
+               "number":"1","type_event":"新注册获取"}]}
+
+POST /STMedalDetails  page=0&tab=2
+→ {"over":true,"res":0,
+   "details":[{"id":"1687650","type":"101","format_date":"2026\/09\/25 10:15",
+               "number":"1","type_event":"兑换硬币"}]}
+```
+
+- 返回的是一本**勋章流水账**（明细 = 事件记录），**不是可购买的勋章目录**
+- 明细字段：`id` / `type` / `number` / `type_event` / `format_date`
+  - `type_event` 是现成文案，可直接展示（观测到「新注册获取」「兑换硬币」）
+  - `type` 观测值：`9` = 新注册，`101` = 兑换硬币
+  - `format_date` 形如 `2026/09/25 10:01`
+- `tab` 是分类，`0~6` 都接受（`tab=1` 是「获得」类、`tab=2` 是「消耗/兑换」类；
+  实测 `tab=0` 与 `3~6` 为空）
+- 传字符串（`medal_detail_const` 等）不报错但恒空 —— 那几个键是**资源名**，不是 tab 取值
+- `over` = 本页之后没有了
+- **需登录**：游客态恒 `{"res":1}`
+
+### 19.2 两个兑换接口：只有一个还活着
+
+| 接口 | 参数 | 方向 | 状态 |
+|---|---|---|---|
+| `ExchangeSTMedal` | `count` | **勋章 → 硬币**（输入是勋章） | ✅ 活 |
+| `ExchangeSTCoin` | `count` | 硬币 → 勋章 | ❌ 服务端已下线 |
+
+```
+POST /ExchangeSTMedal count=999999
+→ {"res":2,"remind_hint":"勋章数量不足，兑换失败"}
+   说明 count 指的是「要花掉几枚勋章」，不是硬币。
+
+POST /ExchangeSTCoin          （不带参数也一样）
+→ {"res":2,"remind_hint":"硬币兑换勋章功能已全面升级，请APP升级最新版本了解详情"}
+```
+
+**`ExchangeSTCoin` 不是版本号门槛**，实测排除：
+
+- 换 `app_v`：`2.0.2` / `2.2.5` / `2.3.3` / `2.4.0` / `2.5.0` / `3.0.0` —— 返回完全一致
+- 换 `app_c`：`171` / `188` / `201` / `220`（签名同步用新 app_c）—— 返回完全一致
+- **不带任何参数**也是这句话，连「count field missing」都不报
+  → 说明服务端在参数校验**之前**就短路了，是真下线
+
+> 顺带确认：签名模板 `f0{call_id 后四位}com.yaerxing.fkst{app_c}F.K*$t` **只含 `app_c`**，
+> 所以改 `app_v` 不影响 `api_sig`，可以随便试版本号。
+
+### 19.3 官方 APK 里的调用点（来自 `fkst-desktop-main/docs/api.md`）
+
+| 接口 | 官方调用点 |
+|---|---|
+| `ExchangeSTCoin` | `CoinFragment.java:317`（金币页） |
+| `ExchangeSTMedal` | `MedalFragment.java:116`（勋章页） |
+| `STMedalDetails` | `MedalFragment`（勋章列表） |
+| `ExchangeSTVCard` | `ExchangeVCardActivity.java:179`（名片） |
+| `AddSTCoin` | `CoinFragment.java:337`（签到） |
+
+`ExchangeSTVCard` 实测回 `{"remind_hint":"硬币余量不足,点亮失败","res":2}` —— 是**用硬币点名片**。
+
+### 19.4 对客户端的结论
+
+- **硬币余额**：`GetSTMyData5` → `coin_count`（同时给 `get_coin_day` / `get_coin_status`），
+  已可用，客户端里目前标为「积分」
+- **勋章明细**：可做，数据形状已确认
+- **硬币 → 勋章**：**做不了**。服务端已下线，`ExchangeSTCoin` 只会回「请升级 APP」。
+  要找回新接口需要**当前最新版官方 APK**（我们手里的 dex 是 2.2.5，早于下线），
+  用 `tools/dex_strings.py` 扫字符串池才可能挖到新的方法名
+- **勋章 → 硬币**：接口活着，`ExchangeSTMedal` + `count`。但**兑换比例未验证**
+  （未知「1 枚勋章换几枚硬币」），且会真实消耗勋章，需在真账号上确认后再实现
+
+### 19.5 通用教训
+
+`page` 从 0 开始的接口不止这一个 —— 探列表类接口时**先试 `page=0`**，
+否则会误判成「接口没数据 / 权限不足」。
